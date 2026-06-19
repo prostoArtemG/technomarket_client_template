@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.db import AsyncSessionLocal
-from app.models import Order, Product, SiteEvent
+from app.models import Order, Product, ProductSpec, SiteEvent
 
 logger = logging.getLogger(__name__)
 
@@ -135,3 +135,37 @@ async def create_order(data: SiteOrderRequest, request: Request) -> dict:
                 logger.warning("Failed to notify admin %s: %s", admin_id, exc)
 
     return {"ok": True, "order_id": order_id}
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics — raw DB state for a product  (admin/debug use)
+# ---------------------------------------------------------------------------
+
+@router.get("/diag/product/{product_id}")
+async def diag_product(product_id: int):
+    """Return raw DB state for a product: Product fields + ProductSpec rows."""
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, product_id)
+        if product is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        spec_rows = list((await session.scalars(
+            select(ProductSpec)
+            .where(ProductSpec.product_id == product_id)
+            .order_by(ProductSpec.id)
+        )).all())
+
+    return {
+        "product": {
+            "id": product.id,
+            "name": product.name,
+            "category": product.category,
+            "description": product.description,
+            "specs": product.specs,
+        },
+        "product_spec_count": len(spec_rows),
+        "product_specs": [
+            {"id": r.id, "name": r.name, "value": r.value}
+            for r in spec_rows
+        ],
+    }

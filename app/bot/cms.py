@@ -487,6 +487,9 @@ def _prod_card_kb(p: "Product", page: int = 0, site_url: str = "") -> InlineKeyb
             InlineKeyboardButton(text="📋 Характеристики", callback_data=f"cms:pe:{pid}:specs:{page}"),
         ],
         [
+            InlineKeyboardButton(text="🔄 Перепарсити хар-ки", callback_data=f"cms:reparse:{pid}:{page}"),
+        ],
+        [
             InlineKeyboardButton(text="🖼 Фото товару",     callback_data=f"cms:pgallery:{pid}:{page}"),
             InlineKeyboardButton(text="⭐ Плашка",         callback_data=f"cms:bview:{pid}:{page}"),
         ],
@@ -894,7 +897,10 @@ async def cms_prod_edit_field_input(message: Message, state: FSMContext) -> None
                         if existing is None:
                             session.add(CategorySpec(category=product.category, name=spec_name))
         else:
-            setattr(product, field, None if clear else val)
+            if field == "description" and not clear:
+                setattr(product, field, _clean_description(val))
+            else:
+                setattr(product, field, None if clear else val)
         await session.commit()
         await session.refresh(product)
         fresh = product
@@ -1145,6 +1151,103 @@ async def cms_prod_seo_show(cb: CallbackQuery, state: FSMContext) -> None:
         reply_markup=_seo_kb(prod_id, page),
     )
     await cb.answer()
+
+
+# ── Product: reparse specs (rebuild ProductSpec from Product.specs text) ───────
+
+@router.callback_query(F.data.startswith("cms:reparse:"))
+async def cms_prod_reparse(cb: CallbackQuery, state: FSMContext) -> None:
+    """Re-parse Product.specs with the current parser and rebuild ProductSpec rows.
+
+    Useful for products created before the multi-format parser was introduced
+    (e.g. specs stored as "K1 > V1 > K2 > V2" which the old parser ignored).
+    """
+    await cb.answer()
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+    except (IndexError, ValueError):
+        return
+
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, prod_id)
+        if product is None:
+            await cb.message.answer("Товар не знайдено.")
+            return
+
+        # ── Snapshot BEFORE ─────────────────────────────────────────────────
+        old_specs_text = product.specs or ""
+        old_prod_spec_rows = list((await session.scalars(
+            select(ProductSpec).where(ProductSpec.product_id == prod_id).order_by(ProductSpec.id)
+        )).all())
+        old_count = len(old_prod_spec_rows)
+        old_list_preview = "\n".join(
+            f"  • {r.name}: {r.value}" for r in old_prod_spec_rows
+        ) or "  <i>(немає)</i>"
+
+        # ── Clean description ────────────────────────────────────────────────
+        if product.description:
+            product.description = _clean_description(product.description)
+
+        # ── Re-parse specs ───────────────────────────────────────────────────
+        specs_list = _parse_specs_text(old_specs_text)
+        new_specs_text = _specs_text_from_list(specs_list)
+
+        # Delete ALL old ProductSpec rows for this product
+        await session.execute(
+            delete(ProductSpec).where(ProductSpec.product_id == prod_id)
+        )
+
+        # Insert fresh rows
+        for spec_name, spec_value in specs_list:
+            session.add(ProductSpec(
+                product_id=prod_id,
+                name=spec_name,
+                value=spec_value,
+            ))
+
+        # Upsert CategorySpec (discover new filterable specs)
+        if product.category and specs_list:
+            for spec_name, _ in specs_list:
+                existing = await session.scalar(
+                    select(CategorySpec).where(
+                        CategorySpec.category == product.category,
+                        CategorySpec.name == spec_name,
+                    )
+                )
+                if existing is None:
+                    session.add(CategorySpec(
+                        category=product.category,
+                        name=spec_name,
+                    ))
+
+        # Update Product.specs to normalised "K: V" text
+        if new_specs_text:
+            product.specs = new_specs_text
+
+        await session.commit()
+        await session.refresh(product)
+
+    # ── Build diagnostic report ──────────────────────────────────────────────
+    new_list_preview = "\n".join(
+        f"  • {n}: {v}" for n, v in specs_list
+    ) or "  <i>(нічого не розпізнано)</i>"
+
+    report = (
+        f"🔄 <b>Перепарсинг характеристик товару #{prod_id}</b>\n\n"
+        f"<b>БУЛО ({old_count} рядків у ProductSpec):</b>\n{old_list_preview}\n\n"
+        f"<b>Product.specs (сирий текст):</b>\n<code>{old_specs_text[:300] or '—'}</code>\n\n"
+        f"<b>СТАЛО ({len(specs_list)} пар):</b>\n{new_list_preview}\n\n"
+        f"<b>Product.specs (нормалізовано):</b>\n<code>{new_specs_text or '—'}</code>"
+    )
+
+    site_url = _site_url_for_product(prod_id)
+    await cb.message.answer(
+        report,
+        parse_mode="HTML",
+        reply_markup=_prod_card_kb(product, page, site_url),
+    )
 
 
 # ── Product: search ────────────────────────────────────────────────────────────
