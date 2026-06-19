@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,9 +29,11 @@ class Settings(BaseSettings):
 
     @field_validator("admin_ids", mode="before")
     @classmethod
-    def _parse_admin_ids(cls, v):
+    def _parse_admin_ids(cls, v: Any):
         if v is None or v == "":
             return []
+        if isinstance(v, int):
+            return [v]
         if isinstance(v, str):
             return [int(x.strip()) for x in v.split(",") if x.strip()]
         if isinstance(v, (list, tuple)):
