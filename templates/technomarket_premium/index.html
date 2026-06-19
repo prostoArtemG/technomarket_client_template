@@ -9,17 +9,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
-<body>
+<body data-theme="{{ client.theme_name or 'default' }}">
 
 <!-- ╔══════════════════════════════════════════════╗ -->
 <!-- ║  PROMO BAR                                   ║ -->
 <!-- ╚══════════════════════════════════════════════╝ -->
+{% if client.show_promo_bar %}
+{%- set _pt = client.promo_text or "⚡ Швидка доставка по всій Україні &nbsp;&nbsp;&nbsp;&nbsp; 🛡️ Офіційна гарантія &nbsp;&nbsp;&nbsp;&nbsp; 💳 Кредит 0% &nbsp;&nbsp;&nbsp;&nbsp; 📞 Безкоштовна консультація" %}
 <div class="promo-bar" id="promoBar">
   <div class="promo-marquee-wrap">
-    <span class="promo-bar-text">⚡ Швидка доставка по всій Україні &nbsp;&nbsp;&nbsp;&nbsp; 🛡️ Офіційна гарантія &nbsp;&nbsp;&nbsp;&nbsp; 💳 Кредит 0% &nbsp;&nbsp;&nbsp;&nbsp; 📞 Безкоштовна консультація &nbsp;&nbsp;&nbsp;&nbsp; ⚡ Швидка доставка по всій Україні &nbsp;&nbsp;&nbsp;&nbsp; 🛡️ Офіційна гарантія &nbsp;&nbsp;&nbsp;&nbsp; 💳 Кредит 0% &nbsp;&nbsp;&nbsp;&nbsp; 📞 Безкоштовна консультація</span>
+    <span class="promo-bar-text">{{ _pt | safe }} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {{ _pt | safe }}</span>
   </div>
   <button class="promo-bar-close" onclick="document.getElementById('promoBar').style.display='none'" aria-label="Закрити">✕</button>
 </div>
+{% endif %}
 
 <!-- ╔══════════════════════════════════════════════╗ -->
 <!-- ║  HEADER                                      ║ -->
@@ -38,17 +41,18 @@
         <span class="logo-text">{{ client.shop_title }}</span>
       </a>
       {% endif %}
-      <p>Побутова техніка під замовлення та в наявності</p>
+      <p>{{ client.subtitle or 'Побутова техніка під замовлення та в наявності' }}</p>
       {% if client.phone %}
       <a href="tel:{{ client.phone | replace(' ','') | replace('(','') | replace(')','') | replace('-','') }}" class="header-phone">📞 {{ client.phone }}</a>
       {% endif %}
+      {% if client.phone2 %}
+      <a href="tel:{{ client.phone2 | replace(' ','') | replace('(','') | replace(')','') | replace('-','') }}" class="header-phone">📞 {{ client.phone2 }}</a>
+      {% endif %}
+      {% if client.viber_url %}
+      <a href="{{ client.viber_url }}" class="header-phone" target="_blank" rel="noopener noreferrer">📲 Viber</a>
+      {% endif %}
     </div>
     <div class="header-actions">
-      <div class="lang-switch">
-        <button class="site-lang-btn" id="langBtnRu" onclick="setLang('ru')">RU</button>
-        <span class="lang-separator">|</span>
-        <button class="site-lang-btn" id="langBtnUk" onclick="setLang('uk')">UA</button>
-      </div>
       <a href="#" class="cart-pill" id="cartBtn" onclick="openCartDrawer(); return false;" aria-label="Кошик">🛒 <span id="cartCount">0</span></a>
     </div>
   </div>
@@ -57,20 +61,18 @@
 <!-- ╔══════════════════════════════════════════════╗ -->
 <!-- ║  HERO BANNER                                 ║ -->
 <!-- ╚══════════════════════════════════════════════╝ -->
+{% if client.show_banner %}
 <section class="hero-banner">
   <div class="hero-glow hero-glow-1"></div>
   <div class="hero-glow hero-glow-2"></div>
   <div class="hero-content">
     <h1 class="hero-title">{{ client.shop_title }}</h1>
-    <p class="hero-subtitle"
-       data-ru="Бытовая техника под заказ и в наличии"
-       data-uk="Побутова техніка під замовлення та в наявності">
-      Побутова техніка під замовлення та в наявності
-    </p>
+    <p class="hero-subtitle">{{ client.subtitle or 'Побутова техніка під замовлення та в наявності' }}</p>
     <a href="#catalog" class="hero-cta"
        data-ru="В каталог" data-uk="До каталогу">До каталогу</a>
   </div>
 </section>
+{% endif %}
 
 <!-- ╔══════════════════════════════════════════════╗ -->
 <!-- ║  CATEGORY TABS                               ║ -->
@@ -269,7 +271,7 @@
         <span class="logo-text">{{ client.shop_title }}</span>
       </a>
       {% endif %}
-      <p data-ru="Бытовая техника под заказ и в наличии" data-uk="Побутова техніка під замовлення та в наявності">Побутова техніка під замовлення та в наявності</p>
+      <p>{{ client.subtitle or 'Побутова техніка під замовлення та в наявності' }}</p>
     </div>
 
     <div class="footer-col">
@@ -296,6 +298,12 @@
       {% if client.phone %}
       <p><a href="tel:{{ client.phone | replace(' ','') | replace('(','') | replace(')','') | replace('-','') }}">📞 {{ client.phone }}</a></p>
       {% endif %}
+      {% if client.phone2 %}
+      <p><a href="tel:{{ client.phone2 | replace(' ','') | replace('(','') | replace(')','') | replace('-','') }}">📞 {{ client.phone2 }}</a></p>
+      {% endif %}
+      {% if client.viber_url %}
+      <p>📲 <a href="{{ client.viber_url }}" target="_blank" rel="noopener noreferrer">Viber</a></p>
+      {% endif %}
       {% if client.telegram_url %}
       <p>💬 <a href="{{ client.telegram_url }}" target="_blank" rel="noopener noreferrer">Telegram</a></p>
       {% endif %}
@@ -315,6 +323,13 @@
       <a href="#catalog" data-ru="Каталог" data-uk="Каталог">Каталог</a>
       <a href="#" data-ru="Контакты" data-uk="Контакти">Контакти</a>
     </div>
+    {% if client.show_lang_switch %}
+    <div class="lang-switch">
+      <button class="site-lang-btn" id="langBtnRu" onclick="setLang('ru')">RU</button>
+      <span class="lang-separator">|</span>
+      <button class="site-lang-btn" id="langBtnUk" onclick="setLang('uk')">UA</button>
+    </div>
+    {% endif %}
   </div>
 </footer>
 
@@ -413,8 +428,8 @@ function setLang(lang) {
   document.querySelectorAll('.site-lang-btn').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-lang') === lang || btn.id === 'langBtn' + lang.charAt(0).toUpperCase() + lang.slice(1));
   });
-  document.getElementById('langBtnRu').classList.toggle('active', lang === 'ru');
-  document.getElementById('langBtnUk').classList.toggle('active', lang === 'uk');
+  var _r = document.getElementById('langBtnRu'); if (_r) _r.classList.toggle('active', lang === 'ru');
+  var _u = document.getElementById('langBtnUk'); if (_u) _u.classList.toggle('active', lang === 'uk');
 }
 setLang(_lang);
 
