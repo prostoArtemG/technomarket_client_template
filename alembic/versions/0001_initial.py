@@ -105,7 +105,6 @@ def upgrade() -> None:
             sa.String(32),
             nullable=False,
             server_default="new",
-            index=True,
         ),
         sa.Column(
             "created_at",
