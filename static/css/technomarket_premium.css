@@ -7,9 +7,14 @@
    THEME VARIABLES  (set via <body data-theme="...">)
    ============================================================ */
 :root {
-  --accent:       var(--accent);
-  --accent-dark:  var(--accent-dark);
-  --accent-light: var(--accent-light);
+  --accent:       #16a34a;
+  --accent-dark:  #15803d;
+  --accent-light: #f0fdf4;
+}
+[data-theme="default"] {
+  --accent:       #16a34a;
+  --accent-dark:  #15803d;
+  --accent-light: #f0fdf4;
 }
 [data-theme="navy_teal"] {
   --accent:       #0d9488;

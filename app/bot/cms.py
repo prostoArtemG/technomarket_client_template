@@ -133,6 +133,7 @@ async def _download_and_upload(bot: Bot, file_id: str, folder: str, kind: str = 
 # ── Themes ───────────────────────────────────────────────────────────────────
 
 THEMES: dict[str, str] = {
+    "default":     "🌱 За замовчуванням (зелена)",
     "light_red":   "🔴 Червоне світло (світла)",
     "navy_teal":   "🌊 Темно-синя + бірюза",
     "purple_lime": "🟣 Фіолетова + лайм",
@@ -141,7 +142,7 @@ VALID_THEMES: frozenset[str] = frozenset(THEMES)
 
 
 def _themes_kb(current: str | None) -> InlineKeyboardMarkup:
-    current = current or "light_red"
+    current = current or "default"
     rows = [
         [InlineKeyboardButton(
             text=("✅ " if key == current else "") + label,
@@ -178,7 +179,7 @@ def _settings_text(shop: ShopSettings | None) -> str:
     def _v(val: str | None) -> str:
         return val if val else "<i>не вказано</i>"
 
-    theme = (shop.theme_name if shop else None) or "light_red"
+    theme = (shop.theme_name if shop else None) or "default"
     return (
         f"⚙️ <b>Налаштування магазину</b>\n\n"
         f"🏪 Назва на сайті: <b>{_v(shop.shop_title if shop else None)}</b>\n"
@@ -1509,7 +1510,7 @@ async def cms_settings_start_edit(cb: CallbackQuery, state: FSMContext) -> None:
 
     if field == "theme":
         shop = await _get_shop()
-        theme = (shop.theme_name if shop else None) or "light_red"
+        theme = (shop.theme_name if shop else None) or "default"
         await cb.message.edit_text(
             f"🎨 <b>Тема сайту</b>\n\nПоточна: {THEMES.get(theme, theme)}\nОберіть:",
             parse_mode="HTML",
@@ -1551,7 +1552,8 @@ async def cms_set_theme(cb: CallbackQuery, state: FSMContext) -> None:
         parse_mode="HTML",
         reply_markup=_settings_overview_kb(),
     )
-    await cb.answer("✅ Тему збережено!")
+    theme_label = THEMES.get(theme_key, theme_key)
+    await cb.answer(f"✅ Тему сайту змінено: {theme_label}", show_alert=False)
 
 
 @router.callback_query(F.data.startswith("cms:clr:"))
