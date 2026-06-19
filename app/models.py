@@ -81,6 +81,11 @@ class Product(Base):
         back_populates="product",
         cascade="all, delete-orphan",
     )
+    images: Mapped[list["ProductImage"]] = relationship(
+        back_populates="product",
+        cascade="all, delete-orphan",
+        order_by="ProductImage.sort_order",
+    )
 
 
 class ProductSpec(Base):
@@ -100,6 +105,31 @@ class ProductSpec(Base):
     value: Mapped[str] = mapped_column(String(512), nullable=False)
 
     product: Mapped["Product"] = relationship(back_populates="specs_structured")
+
+
+class ProductImage(Base):
+    """Up to 5 photos per product. One row is marked is_main=True.
+
+    Product.image_url is always kept in sync with the main image.
+    """
+
+    __tablename__ = "product_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    image_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    public_id: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_main: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    product: Mapped["Product"] = relationship(back_populates="images")
 
 
 class CategorySpec(Base):

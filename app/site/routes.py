@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db import AsyncSessionLocal
-from app.models import CategorySpec, Product, ProductSpec, ShopSettings, SiteEvent
+from app.models import CategorySpec, Product, ProductImage, ProductSpec, ShopSettings, SiteEvent
 from app.site.i18n import DEFAULT_LANG, SUPPORTED_LANGS, get_t
 
 logger = logging.getLogger(__name__)
@@ -167,7 +167,27 @@ async def shop_product(
         except Exception:
             await session.rollback()
 
+        image_rows: list = []
+        try:
+            image_rows = list((
+                await session.scalars(
+                    select(ProductImage)
+                    .where(ProductImage.product_id == product_id)
+                    .order_by(ProductImage.sort_order)
+                )
+            ).all())
+        except Exception:
+            await session.rollback()
+
     specs_map = {sr.name: sr.value for sr in spec_rows}
+
+    # Build images list; fall back to product.image_url if no ProductImage rows
+    if image_rows:
+        images = [{"url": img.image_url, "is_main": img.is_main} for img in image_rows]
+    elif product_row.image_url:
+        images = [{"url": product_row.image_url, "is_main": True}]
+    else:
+        images = []
 
     product_data = {
         "id": product_row.id,
@@ -181,6 +201,7 @@ async def shop_product(
         "specs": product_row.specs,
         "specs_map": specs_map,
         "image_url": product_row.image_url,
+        "images": images,
         "is_available": product_row.is_available,
         "badge": product_row.badge,
         "seo_title": product_row.seo_title,

@@ -37,7 +37,7 @@ from app.bot.keyboards import (
     main_menu,
 )
 from app.db import AsyncSessionLocal
-from app.models import CategorySpec, Order, Product, ProductSpec, ShopSettings, SiteEvent
+from app.models import CategorySpec, Order, Product, ProductImage, ProductSpec, ShopSettings, SiteEvent
 
 logger = logging.getLogger(__name__)
 
@@ -485,7 +485,7 @@ def _prod_card_kb(p: "Product", page: int = 0, site_url: str = "") -> InlineKeyb
             InlineKeyboardButton(text="📋 Характеристики", callback_data=f"cms:pe:{pid}:specs:{page}"),
         ],
         [
-            InlineKeyboardButton(text="🖼 Фото",           callback_data=f"cms:pe:{pid}:image:{page}"),
+            InlineKeyboardButton(text="🖼 Фото товару",     callback_data=f"cms:pgallery:{pid}:{page}"),
             InlineKeyboardButton(text="⭐ Плашка",         callback_data=f"cms:bview:{pid}:{page}"),
         ],
         [
@@ -599,6 +599,10 @@ def _site_url_for_product(product_id: int) -> str:
 
 # ── FSM states ─────────────────────────────────────────────────────────────────
 
+class CmsProductPhotos(StatesGroup):
+    waiting = State()  # waiting for a photo to add to existing product
+
+
 class CmsAddProduct(StatesGroup):
     group          = State()
     group_input    = State()
@@ -611,7 +615,7 @@ class CmsAddProduct(StatesGroup):
     specs          = State()
     price          = State()
     old_price      = State()
-    image_url      = State()
+    photos         = State()  # multi-photo collection (up to 5)
 
 
 class CmsSettings(StatesGroup):
@@ -648,7 +652,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 # ── /cancel ────────────────────────────────────────────────────────────────────
 
-@router.message(StateFilter(CmsAddProduct, CmsSettings, CmsEditProduct, CmsProductSearch), Command("cancel"))
+@router.message(StateFilter(CmsAddProduct, CmsSettings, CmsEditProduct, CmsProductSearch, CmsProductPhotos), Command("cancel"))
 async def cms_cancel(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("Скасовано.", reply_markup=main_menu())
@@ -1653,8 +1657,7 @@ async def cms_add_price(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "cms:skip:old_price", StateFilter(CmsAddProduct.old_price))
 async def cms_skip_old_price(cb: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(old_price=None)
-    await state.set_state(CmsAddProduct.image_url)
-    await cb.message.answer("Крок 9 — Надішліть фото товару, URL посилання або '-' щоб пропустити:", reply_markup=_skip_kb("image_url"))
+    await _enter_photos_step(cb.message, state)
     await cb.answer()
 
 
@@ -1669,50 +1672,118 @@ async def cms_add_old_price(message: Message, state: FSMContext) -> None:
         await message.answer("Некоректна ціна. Введіть число або натисніть «Пропустити»:")
         return
     await state.update_data(old_price=str(old_price))
-    await state.set_state(CmsAddProduct.image_url)
-    await message.answer("Крок 9 — Надішліть фото товару, URL посилання або '-' щоб пропустити:", reply_markup=_skip_kb("image_url"))
+    await _enter_photos_step(message, state)
 
 
-@router.callback_query(F.data == "cms:skip:image_url", StateFilter(CmsAddProduct.image_url))
-async def cms_skip_image_url(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(image_url=None)
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 9 — Multi-photo collection (up to 5 photos, add product flow)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MAX_PRODUCT_PHOTOS = 5
+
+
+def _photos_progress_kb(count: int) -> InlineKeyboardMarkup:
+    """Keyboard shown while collecting photos during add-product flow."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Готово",     callback_data="cms:photos:done"),
+        InlineKeyboardButton(text="⏭ Пропустити", callback_data="cms:photos:skip"),
+    ]])
+
+
+async def _enter_photos_step(message: Message, state: FSMContext) -> None:
+    await state.update_data(collected_photos=[])
+    await state.set_state(CmsAddProduct.photos)
+    await message.answer(
+        "Крок 9 — Надішліть фото товару (до 5 штук).\n"
+        "Можна надсилати по одному.\n"
+        "Або натисніть «Пропустити»:",
+        reply_markup=_photos_progress_kb(0),
+    )
+
+
+@router.callback_query(F.data == "cms:photos:skip", StateFilter(CmsAddProduct.photos))
+async def cms_photos_skip(cb: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(collected_photos=[])
     await _do_save_product(cb.message, state)
     await cb.answer()
 
 
-@router.message(StateFilter(CmsAddProduct.image_url), F.photo)
+@router.callback_query(F.data == "cms:photos:done", StateFilter(CmsAddProduct.photos))
+async def cms_photos_done(cb: CallbackQuery, state: FSMContext) -> None:
+    await _do_save_product(cb.message, state)
+    await cb.answer()
+
+
+@router.message(StateFilter(CmsAddProduct.photos), F.photo)
 async def cms_add_photo(message: Message, state: FSMContext) -> None:
     from app.config import settings as app_settings
+    data = await state.get_data()
+    collected: list[str] = data.get("collected_photos") or []
+
+    if len(collected) >= MAX_PRODUCT_PHOTOS:
+        await _do_save_product(message, state)
+        return
+
     if not _is_cloudinary_configured():
         await message.answer(
-            "📷 Cloudinary не налаштований.\nНадішліть посилання (URL) на фото товару або натисніть «Пропустити»:",
-            reply_markup=_skip_kb("image_url"),
+            "📷 Cloudinary не налаштований. Надішліть URL фото або натисніть «Готово»:",
+            reply_markup=_photos_progress_kb(len(collected)),
         )
         return
+
     photo = message.photo[-1]
     folder = f"{app_settings.cloudinary_folder}/products"
     url = await _download_and_upload(message.bot, photo.file_id, folder=folder, kind="product")
-    if url:
-        await state.update_data(image_url=url)
-    else:
-        await message.answer("⚠️ Не вдалось завантажити фото. Спробуйте URL або пропустіть:", reply_markup=_skip_kb("image_url"))
+    if not url:
+        await message.answer(
+            "⚠️ Не вдалось завантажити фото. Спробуйте ще раз або натисніть «Готово»:",
+            reply_markup=_photos_progress_kb(len(collected)),
+        )
         return
-    await _do_save_product(message, state)
+
+    collected.append(url)
+    await state.update_data(collected_photos=collected)
+    count = len(collected)
+
+    if count >= MAX_PRODUCT_PHOTOS:
+        await message.answer(f"✅ Фото {count}/{MAX_PRODUCT_PHOTOS} додано. Досягнуто максимум, зберігаємо…")
+        await _do_save_product(message, state)
+    else:
+        await message.answer(
+            f"✅ Фото {count}/{MAX_PRODUCT_PHOTOS} додано. Надішліть ще або натисніть «Готово»:",
+            reply_markup=_photos_progress_kb(count),
+        )
 
 
-@router.message(StateFilter(CmsAddProduct.image_url))
-async def cms_add_image_url(message: Message, state: FSMContext) -> None:
+@router.message(StateFilter(CmsAddProduct.photos))
+async def cms_add_photo_url(message: Message, state: FSMContext) -> None:
+    """Accept a URL as a photo during add-product flow."""
     val = (message.text or "").strip()
-    await state.update_data(image_url=val or None)
-    await _do_save_product(message, state)
+    data = await state.get_data()
+    collected: list[str] = data.get("collected_photos") or []
+    if val and val != "-":
+        collected.append(val)
+        await state.update_data(collected_photos=collected)
+        count = len(collected)
+        if count >= MAX_PRODUCT_PHOTOS:
+            await _do_save_product(message, state)
+            return
+        await message.answer(
+            f"✅ Фото {count}/{MAX_PRODUCT_PHOTOS} додано. Надішліть ще або натисніть «Готово»:",
+            reply_markup=_photos_progress_kb(count),
+        )
+    else:
+        await _do_save_product(message, state)
 
 
 async def _do_save_product(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     old_price_val = Decimal(data["old_price"]) if data.get("old_price") else None
     category = data.get("category")
+    photos: list[str] = data.get("collected_photos") or []
 
     async with AsyncSessionLocal() as session:
+        main_url = photos[0] if photos else None
         product = Product(
             name=data["name"],
             group_name=data.get("group_name"),
@@ -1722,11 +1793,21 @@ async def _do_save_product(message: Message, state: FSMContext) -> None:
             specs=data.get("specs"),
             price=Decimal(data["price"]),
             old_price=old_price_val,
-            image_url=data.get("image_url"),
+            image_url=main_url,
             is_available=True,
         )
         session.add(product)
         await session.flush()
+
+        # Save ProductImage rows
+        for idx, url in enumerate(photos):
+            session.add(ProductImage(
+                product_id=product.id,
+                image_url=url,
+                sort_order=idx,
+                is_main=(idx == 0),
+            ))
+
         # Save structured specs
         specs_map = _parse_specs_text(data.get("specs"))
         for spec_name, spec_value in specs_map.items():
@@ -1750,9 +1831,304 @@ async def _do_save_product(message: Message, state: FSMContext) -> None:
     cat_label = f" · {data['category']}" if data.get("category") else ""
     brand_label = f" [{data['brand']}]" if data.get("brand") else ""
     old_price_label = f" (знижка з {data['old_price']} грн)" if data.get("old_price") else ""
+    photo_label = f"\nФото: {len(photos)} шт." if photos else ""
     await message.answer(
         f"✅ Товар <b>{data['name']}</b>{brand_label} додано!{group_label}{cat_label}\n"
-        f"Ціна: {data['price']} грн{old_price_label}",
+        f"Ціна: {data['price']} грн{old_price_label}{photo_label}",
         parse_mode="HTML",
         reply_markup=main_menu(),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHOTO GALLERY — manage photos of an existing product
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _gallery_kb(images: list, prod_id: int, page: int) -> InlineKeyboardMarkup:
+    """Build inline keyboard for the photo gallery manager."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for img in images:
+        star = "⭐ " if img.is_main else ""
+        rows.append([InlineKeyboardButton(
+            text=f"{star}Фото {img.sort_order + 1}",
+            callback_data=f"cms:ph:view:{prod_id}:{img.id}:{page}",
+        )])
+    rows.append([
+        InlineKeyboardButton(text="➕ Додати фото", callback_data=f"cms:ph:add:{prod_id}:{page}"),
+    ])
+    rows.append([
+        InlineKeyboardButton(text="← Назад до товару", callback_data=f"cms:pv:{prod_id}:{page}"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _photo_actions_kb(img_id: int, prod_id: int, page: int, is_main: bool, is_first: bool, is_last: bool) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if not is_main:
+        rows.append([InlineKeyboardButton(text="⭐ Зробити головним", callback_data=f"cms:ph:main:{prod_id}:{img_id}:{page}")])
+    move_row = []
+    if not is_first:
+        move_row.append(InlineKeyboardButton(text="🔼 Вверх", callback_data=f"cms:ph:up:{prod_id}:{img_id}:{page}"))
+    if not is_last:
+        move_row.append(InlineKeyboardButton(text="🔽 Вниз",  callback_data=f"cms:ph:down:{prod_id}:{img_id}:{page}"))
+    if move_row:
+        rows.append(move_row)
+    rows.append([InlineKeyboardButton(text="🗑 Видалити", callback_data=f"cms:ph:del:{prod_id}:{img_id}:{page}")])
+    rows.append([InlineKeyboardButton(text="← Галерея",  callback_data=f"cms:pgallery:{prod_id}:{page}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _sync_main_image(session, prod_id: int) -> None:
+    """Keep Product.image_url in sync with the is_main ProductImage (or first by sort_order)."""
+    imgs = list((await session.scalars(
+        select(ProductImage).where(ProductImage.product_id == prod_id).order_by(ProductImage.sort_order)
+    )).all())
+    product = await session.get(Product, prod_id)
+    if not product:
+        return
+    if not imgs:
+        product.image_url = None
+        return
+    main = next((i for i in imgs if i.is_main), imgs[0])
+    product.image_url = main.image_url
+
+
+@router.callback_query(F.data.startswith("cms:pgallery:"))
+async def cms_prod_gallery(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, prod_id)
+        if product is None:
+            await cb.answer("Товар не знайдено", show_alert=True)
+            return
+        images = list((await session.scalars(
+            select(ProductImage).where(ProductImage.product_id == prod_id).order_by(ProductImage.sort_order)
+        )).all())
+
+    count = len(images)
+    if count == 0:
+        text = f"<b>🖼 Фото товару #{prod_id}</b>\n\nФото відсутні."
+    else:
+        lines = [f"<b>🖼 Фото товару #{prod_id}</b> ({count}/5)\n"]
+        for img in images:
+            star = "⭐ головне" if img.is_main else f"сортування: {img.sort_order}"
+            lines.append(f"• Фото {img.sort_order + 1} — {star}")
+        text = "\n".join(lines)
+
+    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=_gallery_kb(images, prod_id, page))
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:ph:view:"))
+async def cms_ph_view(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[3])
+        img_id  = int(parts[4])
+        page    = int(parts[5]) if len(parts) > 5 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        img = await session.get(ProductImage, img_id)
+        if img is None or img.product_id != prod_id:
+            await cb.answer("Фото не знайдено", show_alert=True)
+            return
+        images = list((await session.scalars(
+            select(ProductImage).where(ProductImage.product_id == prod_id).order_by(ProductImage.sort_order)
+        )).all())
+
+    ids = [i.id for i in images]
+    pos = ids.index(img_id)
+    kb = _photo_actions_kb(img_id, prod_id, page, img.is_main, pos == 0, pos == len(ids) - 1)
+    await cb.message.edit_text(
+        f"<b>Фото {pos + 1}/{len(ids)}</b>\n{'⭐ Головне' if img.is_main else ''}\n<a href='{img.image_url}'>Переглянути</a>",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:ph:main:"))
+async def cms_ph_set_main(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[3])
+        img_id  = int(parts[4])
+        page    = int(parts[5]) if len(parts) > 5 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        imgs = list((await session.scalars(
+            select(ProductImage).where(ProductImage.product_id == prod_id)
+        )).all())
+        for img in imgs:
+            img.is_main = (img.id == img_id)
+        await _sync_main_image(session, prod_id)
+        await session.commit()
+
+    await cb.answer("⭐ Головне фото оновлено")
+    # Refresh gallery
+    cb.data = f"cms:pgallery:{prod_id}:{page}"
+    await cms_prod_gallery(cb, state)
+
+
+@router.callback_query(F.data.startswith("cms:ph:up:") | F.data.startswith("cms:ph:down:"))
+async def cms_ph_move(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        direction = parts[2]   # "up" or "down"
+        prod_id   = int(parts[3])
+        img_id    = int(parts[4])
+        page      = int(parts[5]) if len(parts) > 5 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        imgs = list((await session.scalars(
+            select(ProductImage).where(ProductImage.product_id == prod_id).order_by(ProductImage.sort_order)
+        )).all())
+        ids = [i.id for i in imgs]
+        if img_id not in ids:
+            await cb.answer("Фото не знайдено", show_alert=True)
+            return
+        pos = ids.index(img_id)
+        if direction == "up" and pos > 0:
+            imgs[pos].sort_order, imgs[pos - 1].sort_order = imgs[pos - 1].sort_order, imgs[pos].sort_order
+        elif direction == "down" and pos < len(imgs) - 1:
+            imgs[pos].sort_order, imgs[pos + 1].sort_order = imgs[pos + 1].sort_order, imgs[pos].sort_order
+        # Re-sync main if needed
+        await _sync_main_image(session, prod_id)
+        await session.commit()
+
+    await cb.answer()
+    cb.data = f"cms:pgallery:{prod_id}:{page}"
+    await cms_prod_gallery(cb, state)
+
+
+@router.callback_query(F.data.startswith("cms:ph:del:"))
+async def cms_ph_delete(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[3])
+        img_id  = int(parts[4])
+        page    = int(parts[5]) if len(parts) > 5 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        img = await session.get(ProductImage, img_id)
+        if img is None or img.product_id != prod_id:
+            await cb.answer("Фото не знайдено", show_alert=True)
+            return
+        was_main = img.is_main
+        await session.delete(img)
+        await session.flush()
+        # Re-number sort_order
+        remaining = list((await session.scalars(
+            select(ProductImage).where(ProductImage.product_id == prod_id).order_by(ProductImage.sort_order)
+        )).all())
+        for idx, r in enumerate(remaining):
+            r.sort_order = idx
+        # If deleted was main, promote first
+        if was_main and remaining:
+            remaining[0].is_main = True
+        await _sync_main_image(session, prod_id)
+        await session.commit()
+
+    await cb.answer("🗑 Фото видалено")
+    cb.data = f"cms:pgallery:{prod_id}:{page}"
+    await cms_prod_gallery(cb, state)
+
+
+@router.callback_query(F.data.startswith("cms:ph:add:"))
+async def cms_ph_add_start(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[3])
+        page    = int(parts[4]) if len(parts) > 4 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        count = (await session.scalar(
+            select(func.count()).where(ProductImage.product_id == prod_id)
+        )) or 0
+
+    if count >= MAX_PRODUCT_PHOTOS:
+        await cb.answer(f"Максимум {MAX_PRODUCT_PHOTOS} фото. Видаліть зайве.", show_alert=True)
+        return
+
+    await state.update_data(ph_add_prod_id=prod_id, ph_add_page=page)
+    await state.set_state(CmsProductPhotos.waiting)
+    await cb.message.answer(
+        f"Надішліть нове фото ({count + 1}/{MAX_PRODUCT_PHOTOS}):\n<i>/cancel для скасування</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+@router.message(StateFilter(CmsProductPhotos.waiting), F.photo)
+async def cms_ph_add_receive(message: Message, state: FSMContext) -> None:
+    from app.config import settings as app_settings
+    data = await state.get_data()
+    prod_id: int = data["ph_add_prod_id"]
+    page: int    = data.get("ph_add_page", 0)
+
+    async with AsyncSessionLocal() as session:
+        count = (await session.scalar(
+            select(func.count()).where(ProductImage.product_id == prod_id)
+        )) or 0
+
+    if count >= MAX_PRODUCT_PHOTOS:
+        await state.clear()
+        await message.answer(f"Максимум {MAX_PRODUCT_PHOTOS} фото вже досягнуто.")
+        return
+
+    if not _is_cloudinary_configured():
+        await message.answer("📷 Cloudinary не налаштований. Надішліть URL фото:")
+        return
+
+    photo = message.photo[-1]
+    folder = f"{app_settings.cloudinary_folder}/products/{prod_id}"
+    url = await _download_and_upload(message.bot, photo.file_id, folder=folder, kind="product")
+    if not url:
+        await message.answer("⚠️ Не вдалось завантажити. Спробуйте ще раз або /cancel:")
+        return
+
+    async with AsyncSessionLocal() as session:
+        is_first = count == 0
+        session.add(ProductImage(
+            product_id=prod_id,
+            image_url=url,
+            sort_order=count,
+            is_main=is_first,
+        ))
+        if is_first:
+            product = await session.get(Product, prod_id)
+            if product:
+                product.image_url = url
+        await session.commit()
+
+    await state.clear()
+    new_count = count + 1
+    await message.answer(
+        f"✅ Фото {new_count}/{MAX_PRODUCT_PHOTOS} додано!",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🖼 До галереї", callback_data=f"cms:pgallery:{prod_id}:{page}"),
+        ]]),
+    )
+

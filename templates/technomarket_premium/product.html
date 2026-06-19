@@ -103,13 +103,26 @@
 
     <!-- LEFT: Gallery -->
     <div class="product-gallery">
-      {% if product.image_url %}
-      <img src="{{ product.image_url }}"
+      {% set main_img = product.images | selectattr('is_main') | first if product.images else none %}
+      {% set main_url = main_img.url if main_img else product.image_url %}
+      {% if main_url %}
+      <img src="{{ main_url }}"
            alt="{{ (product.brand or '') ~ ' ' ~ product.name }}"
            class="main-image"
            id="mainImg"
-           onclick="openLightbox('{{ product.image_url }}')"
+           onclick="openLightbox(this.src)"
            title="Натисніть для збільшення">
+      {% if product.images | length > 1 %}
+      <div class="gallery-thumbs" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        {% for img in product.images %}
+        <img src="{{ img.url }}"
+             alt="Фото {{ loop.index }}"
+             class="gallery-thumb{% if img.is_main %} active{% endif %}"
+             onclick="document.getElementById('mainImg').src=this.src; document.querySelectorAll('.gallery-thumb').forEach(function(t){t.classList.remove('active');}); this.classList.add('active');"
+             style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid {% if img.is_main %}var(--accent){% else %}transparent{% endif %};">
+        {% endfor %}
+      </div>
+      {% endif %}
       {% else %}
       <div class="no-photo" style="height:400px;border-radius:16px;">Немає фото</div>
       {% endif %}
