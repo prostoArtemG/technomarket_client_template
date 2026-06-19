@@ -158,20 +158,36 @@ def _themes_kb(current: str | None) -> InlineKeyboardMarkup:
 SETTINGS_PROMPTS: dict[str, str] = {
     "shop_title":    "🏪 <b>Назва магазину</b>\n\nВведіть назву, яка буде відображатись в шапці сайту:",
     "phone":         "📞 <b>Телефон</b>\n\nВведіть контактний номер телефону:",
+    "phone2":        "📞 <b>Телефон 2</b>\n\nВведіть другий контактний номер (необов'язково):",
+    "viber_url":     "📲 <b>Viber</b>\n\nВведіть посилання на Viber\n(наприклад: <code>https://viber.me/+380XXXXXXXXX</code>):",
+    "subtitle":      "💬 <b>Підзаголовок</b>\n\nВведіть підзаголовок магазину\n(відображається в шапці та на банері):",
     "address":       "📍 <b>Адреса</b>\n\nВведіть адресу магазину:",
     "telegram_url":  "✈️ <b>Telegram</b>\n\nВведіть посилання на Telegram\n(наприклад: <code>https://t.me/myshop</code>):",
     "instagram_url": "📸 <b>Instagram</b>\n\nВведіть посилання на Instagram\n(наприклад: <code>https://instagram.com/myshop</code>):",
     "logo":          "🖼 <b>Логотип</b>\n\nНадішліть фото логотипу або URL посилання на зображення:",
+    "promo_text":    "📢 <b>Бігучий рядок</b>\n\nВведіть текст бігучого рядка у верхній частині сайту:",
 }
 VALID_SETTINGS_FIELDS: frozenset[str] = frozenset(SETTINGS_PROMPTS)
 URL_SETTINGS_FIELDS: frozenset[str] = frozenset({"telegram_url", "instagram_url"})
 FIELD_ATTR: dict[str, str] = {
     "shop_title":    "shop_title",
     "phone":         "phone",
+    "phone2":        "phone2",
+    "viber_url":     "viber_url",
+    "subtitle":      "subtitle",
     "address":       "address",
     "telegram_url":  "telegram_url",
     "instagram_url": "instagram_url",
     "logo":          "logo_url",
+    "promo_text":    "promo_text",
+}
+
+# ── Toggle fields (boolean ShopSettings columns) ──────────────────────────────
+TOGGLE_FIELDS: frozenset[str] = frozenset({"show_promo_bar", "show_lang_switch", "show_banner"})
+TOGGLE_LABELS: dict[str, str] = {
+    "show_promo_bar":   "Промо-бар",
+    "show_lang_switch": "Перемикач мови",
+    "show_banner":      "Банер",
 }
 
 
@@ -180,29 +196,49 @@ def _settings_text(shop: ShopSettings | None) -> str:
         return val if val else "<i>не вказано</i>"
 
     theme = (shop.theme_name if shop else None) or "default"
+    _on = lambda val: "✅" if val else "❌"
     return (
         f"⚙️ <b>Налаштування магазину</b>\n\n"
         f"🏪 Назва на сайті: <b>{_v(shop.shop_title if shop else None)}</b>\n"
         f"📞 Телефон: {_v(shop.phone if shop else None)}\n"
+        f"📞 Телефон 2: {_v(shop.phone2 if shop else None)}\n"
+        f"📲 Viber: {_v(shop.viber_url if shop else None)}\n"
+        f"💬 Підзаголовок: {_v(shop.subtitle if shop else None)}\n"
         f"📍 Адреса: {_v(shop.address if shop else None)}\n"
         f"✈️ Telegram: {_v(shop.telegram_url if shop else None)}\n"
         f"📸 Instagram: {_v(shop.instagram_url if shop else None)}\n"
         f"🖼 Логотип: {'✅ є' if (shop and shop.logo_url) else '<i>немає</i>'}\n"
+        f"📢 Бігучий рядок: {_v(shop.promo_text if shop else None)}\n"
+        f"🔛 Промо-бар: {_on(shop.show_promo_bar if shop is not None else True)}\n"
+        f"🌐 Перемикач мови: {_on(shop.show_lang_switch if shop is not None else True)}\n"
+        f"🖼 Банер: {_on(shop.show_banner if shop is not None else True)}\n"
         f"🎨 Тема: {THEMES.get(theme, theme)}\n\n"
         f"Натисніть кнопку, щоб змінити:"
     )
 
 
-def _settings_overview_kb() -> InlineKeyboardMarkup:
+def _settings_overview_kb(shop: ShopSettings | None = None) -> InlineKeyboardMarkup:
+    def _bi(val: bool) -> str:
+        return "✅" if val else "❌"
+    sp = shop.show_promo_bar   if shop is not None else True
+    sl = shop.show_lang_switch if shop is not None else True
+    sb = shop.show_banner      if shop is not None else True
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🏪 Назва магазину",  callback_data="cms:set:shop_title")],
-            [InlineKeyboardButton(text="📞 Телефон",          callback_data="cms:set:phone")],
-            [InlineKeyboardButton(text="📍 Адреса",           callback_data="cms:set:address")],
-            [InlineKeyboardButton(text="✈️ Telegram",         callback_data="cms:set:telegram_url")],
-            [InlineKeyboardButton(text="📸 Instagram",        callback_data="cms:set:instagram_url")],
-            [InlineKeyboardButton(text="🖼 Логотип",          callback_data="cms:set:logo")],
-            [InlineKeyboardButton(text="🎨 Тема сайту",       callback_data="cms:set:theme")],
+            [InlineKeyboardButton(text="🏪 Назва магазину",               callback_data="cms:set:shop_title")],
+            [InlineKeyboardButton(text="📞 Телефон",                      callback_data="cms:set:phone")],
+            [InlineKeyboardButton(text="📞 Телефон 2",                    callback_data="cms:set:phone2")],
+            [InlineKeyboardButton(text="📲 Viber",                        callback_data="cms:set:viber_url")],
+            [InlineKeyboardButton(text="💬 Підзаголовок",                 callback_data="cms:set:subtitle")],
+            [InlineKeyboardButton(text="📍 Адреса",                       callback_data="cms:set:address")],
+            [InlineKeyboardButton(text="✈️ Telegram",                     callback_data="cms:set:telegram_url")],
+            [InlineKeyboardButton(text="📸 Instagram",                    callback_data="cms:set:instagram_url")],
+            [InlineKeyboardButton(text="🖼 Логотип",                      callback_data="cms:set:logo")],
+            [InlineKeyboardButton(text="🎨 Тема сайту",                   callback_data="cms:set:theme")],
+            [InlineKeyboardButton(text="📢 Бігучий рядок",                callback_data="cms:set:promo_text")],
+            [InlineKeyboardButton(text=f"{_bi(sp)} Промо-бар",           callback_data="cms:toggle:show_promo_bar")],
+            [InlineKeyboardButton(text=f"{_bi(sl)} Перемикач мови",      callback_data="cms:toggle:show_lang_switch")],
+            [InlineKeyboardButton(text=f"{_bi(sb)} Банер",               callback_data="cms:toggle:show_banner")],
         ]
     )
 
@@ -752,10 +788,14 @@ class CmsAddProduct(StatesGroup):
 class CmsSettings(StatesGroup):
     shop_title    = State()
     phone         = State()
+    phone2        = State()
+    viber_url     = State()
+    subtitle      = State()
     address       = State()
     telegram_url  = State()
     instagram_url = State()
     logo          = State()
+    promo_text    = State()
 
 
 class CmsEditProduct(StatesGroup):
@@ -1489,7 +1529,7 @@ async def cms_settings(message: Message, state: FSMContext) -> None:
     await message.answer(
         _settings_text(shop),
         parse_mode="HTML",
-        reply_markup=_settings_overview_kb(),
+        reply_markup=_settings_overview_kb(shop),
     )
 
 
@@ -1503,7 +1543,7 @@ async def cms_settings_start_edit(cb: CallbackQuery, state: FSMContext) -> None:
         await cb.message.answer(
             _settings_text(shop),
             parse_mode="HTML",
-            reply_markup=_settings_overview_kb(),
+            reply_markup=_settings_overview_kb(shop),
         )
         await cb.answer()
         return
@@ -1550,10 +1590,37 @@ async def cms_set_theme(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.message.edit_text(
         _settings_text(shop),
         parse_mode="HTML",
-        reply_markup=_settings_overview_kb(),
+        reply_markup=_settings_overview_kb(shop),
     )
     theme_label = THEMES.get(theme_key, theme_key)
     await cb.answer(f"✅ Тему сайту змінено: {theme_label}", show_alert=False)
+
+
+@router.callback_query(F.data.startswith("cms:toggle:"))
+async def cms_toggle_setting(cb: CallbackQuery) -> None:
+    """Toggle a boolean ShopSettings column (show_promo_bar, show_lang_switch, show_banner)."""
+    field = cb.data[len("cms:toggle:"):]
+    if field not in TOGGLE_FIELDS:
+        await cb.answer("Невідома дія", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        shop = await session.get(ShopSettings, 1)
+        if shop is None:
+            shop = ShopSettings(id=1)
+            session.add(shop)
+        new_val = not getattr(shop, field, True)
+        setattr(shop, field, new_val)
+        await session.commit()
+        await session.refresh(shop)
+    label = TOGGLE_LABELS.get(field, field)
+    icon = "✅" if new_val else "❌"
+    state_str = "увімкнено" if new_val else "вимкнено"
+    await cb.message.edit_text(
+        _settings_text(shop),
+        parse_mode="HTML",
+        reply_markup=_settings_overview_kb(shop),
+    )
+    await cb.answer(f"{icon} {label}: {state_str}")
 
 
 @router.callback_query(F.data.startswith("cms:clr:"))
@@ -1567,14 +1634,15 @@ async def cms_settings_clear_field(cb: CallbackQuery, state: FSMContext) -> None
     await cb.message.answer(
         _settings_text(shop),
         parse_mode="HTML",
-        reply_markup=_settings_overview_kb(),
+        reply_markup=_settings_overview_kb(shop),
     )
     await cb.answer("🗑 Очищено")
 
 
 @router.message(StateFilter(
-    CmsSettings.shop_title, CmsSettings.phone, CmsSettings.address,
-    CmsSettings.telegram_url, CmsSettings.instagram_url,
+    CmsSettings.shop_title, CmsSettings.phone, CmsSettings.phone2,
+    CmsSettings.viber_url, CmsSettings.subtitle, CmsSettings.address,
+    CmsSettings.telegram_url, CmsSettings.instagram_url, CmsSettings.promo_text,
 ))
 async def cms_settings_text_input(message: Message, state: FSMContext) -> None:
     val = (message.text or "").strip()
@@ -1596,7 +1664,7 @@ async def cms_settings_text_input(message: Message, state: FSMContext) -> None:
     await message.answer(
         _settings_text(shop),
         parse_mode="HTML",
-        reply_markup=_settings_overview_kb(),
+        reply_markup=_settings_overview_kb(shop),
     )
 
 
@@ -1617,7 +1685,7 @@ async def cms_logo_photo(message: Message, state: FSMContext) -> None:
         return
     shop = await _save_settings_field("logo", url)
     await state.clear()
-    await message.answer(_settings_text(shop), parse_mode="HTML", reply_markup=_settings_overview_kb())
+    await message.answer(_settings_text(shop), parse_mode="HTML", reply_markup=_settings_overview_kb(shop))
 
 
 @router.message(StateFilter(CmsSettings.logo))
@@ -1635,7 +1703,7 @@ async def cms_logo_url_input(message: Message, state: FSMContext) -> None:
         return
     shop = await _save_settings_field("logo", val)
     await state.clear()
-    await message.answer(_settings_text(shop), parse_mode="HTML", reply_markup=_settings_overview_kb())
+    await message.answer(_settings_text(shop), parse_mode="HTML", reply_markup=_settings_overview_kb(shop))
 
 
 # ── FSM: add product ───────────────────────────────────────────────────────────
