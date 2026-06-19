@@ -632,7 +632,7 @@ def _parse_specs_text(text: str | None) -> list[tuple[str, str]]:
     def _is_header(s: str) -> bool:
         """True if line is a section header to skip (e.g. 'Характеристики')."""
         normalized = re.sub(r'[^\w]', '', s.lower())  # letters/digits only
-        return normalized in {"характеристики", "specifications", "specs"}
+        return normalized in {"характеристики", "specifications", "specs", "опистовару", "opistovar"}
 
     def _looks_like_name_line(s: str) -> bool:
         """True if line looks like a spec name (has ':', '>', ' - ', ' – ')."""
@@ -688,8 +688,23 @@ def _parse_specs_text(text: str | None) -> list[tuple[str, str]]:
             i += 1
 
         else:
-            # No recognisable separator and not consumed as a value — skip
-            i += 1
+            # No recognisable separator.
+            # If the next line also has no separator and is not a header,
+            # treat the pair as (name, value) — handles plain alternating format:
+            #   "Номінальний об'єм"  ← name (no colon)
+            #   "50 л"               ← value
+            next_idx = i + 1
+            next_is_plain_value = (
+                next_idx < len(lines)
+                and not _looks_like_name_line(lines[next_idx])
+                and not _is_header(lines[next_idx])
+                and not _is_header(lines[next_idx].rstrip(":"))
+            )
+            if next_is_plain_value:
+                result.append((line, lines[next_idx].strip()))
+                i += 2
+            else:
+                i += 1  # stray line with no pair — skip
 
     return result
 
