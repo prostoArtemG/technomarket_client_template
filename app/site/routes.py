@@ -81,45 +81,39 @@ async def shop_index(
             )
         ).all())
 
-        spec_rows: list = []
+        # Extract product data inside session to avoid DetachedInstanceError
+        _specs_by_product: dict[int, dict[str, str]] = {}
+        available_filters: dict[str, list] = {}
         try:
             spec_rows = list((
                 await session.scalars(select(ProductSpec))
             ).all())
+            _filters_acc: dict[str, set] = {}
+            for _sr in spec_rows:
+                _specs_by_product.setdefault(_sr.product_id, {})[_sr.name] = _sr.value
+                _filters_acc.setdefault(_sr.name, set()).add(_sr.value)
+            available_filters = {k: sorted(v) for k, v in _filters_acc.items()}
         except Exception:
             await session.rollback()
 
-    # Build specs_map: {product_id: {name: value}}
-    _specs_by_product: dict[int, dict[str, str]] = {}
-    for _sr in spec_rows:
-        _specs_by_product.setdefault(_sr.product_id, {})[_sr.name] = _sr.value
-
-    # Build available_filters from spec rows
-    _filters_acc: dict[str, set] = {}
-    for _sr in spec_rows:
-        _filters_acc.setdefault(_sr.name, set()).add(_sr.value)
-    available_filters: dict[str, list[str]] = {
-        k: sorted(v) for k, v in _filters_acc.items()
-    }
-
-    products = [
-        {
-            "id": p.id,
-            "group_name": p.group_name,
-            "category": p.category,
-            "name": p.name,
-            "description": p.description,
-            "brand": p.brand,
-            "price": float(p.price) if p.price is not None else 0.0,
-            "old_price": float(p.old_price) if p.old_price is not None else None,
-            "specs": p.specs,
-            "specs_map": _specs_by_product.get(p.id, {}),
-            "image_url": p.image_url,
-            "is_available": p.is_available,
-            "badge": p.badge,
-        }
-        for p in products_rows
-    ]
+        products = [
+            {
+                "id": p.id,
+                "group_name": p.group_name,
+                "category": p.category,
+                "name": p.name,
+                "description": p.description,
+                "brand": p.brand,
+                "price": float(p.price) if p.price is not None else 0.0,
+                "old_price": float(p.old_price) if p.old_price is not None else None,
+                "specs": p.specs,
+                "specs_map": _specs_by_product.get(p.id, {}),
+                "image_url": p.image_url,
+                "is_available": p.is_available,
+                "badge": p.badge,
+            }
+            for p in products_rows
+        ]
 
     client = await _get_shop_data()
     asyncio.create_task(_record_event("site_view"))
@@ -157,17 +151,37 @@ async def shop_product(
         if product_row is None:
             raise HTTPException(status_code=404, detail="Product not found")
 
-        spec_rows: list = []
+        # Extract all scalar fields immediately — before any potential rollback
+        product_data = {
+            "id": product_row.id,
+            "group_name": product_row.group_name,
+            "category": product_row.category,
+            "name": product_row.name,
+            "description": product_row.description,
+            "brand": product_row.brand,
+            "price": float(product_row.price) if product_row.price is not None else 0.0,
+            "old_price": float(product_row.old_price) if product_row.old_price is not None else None,
+            "specs": product_row.specs,
+            "image_url": product_row.image_url,
+            "is_available": product_row.is_available,
+            "badge": product_row.badge,
+            "seo_title": product_row.seo_title,
+            "seo_description": product_row.seo_description,
+            "seo_keywords": product_row.seo_keywords,
+        }
+
+        specs_map: dict[str, str] = {}
         try:
             spec_rows = list((
                 await session.scalars(
                     select(ProductSpec).where(ProductSpec.product_id == product_id)
                 )
             ).all())
+            specs_map = {sr.name: sr.value for sr in spec_rows}
         except Exception:
             await session.rollback()
 
-        image_rows: list = []
+        images: list[dict] = []
         try:
             image_rows = list((
                 await session.scalars(
@@ -176,38 +190,16 @@ async def shop_product(
                     .order_by(ProductImage.sort_order)
                 )
             ).all())
+            images = [{"url": img.image_url, "is_main": img.is_main} for img in image_rows]
         except Exception:
             await session.rollback()
 
-    specs_map = {sr.name: sr.value for sr in spec_rows}
+        # Fall back to product.image_url if no ProductImage rows
+        if not images and product_data["image_url"]:
+            images = [{"url": product_data["image_url"], "is_main": True}]
 
-    # Build images list; fall back to product.image_url if no ProductImage rows
-    if image_rows:
-        images = [{"url": img.image_url, "is_main": img.is_main} for img in image_rows]
-    elif product_row.image_url:
-        images = [{"url": product_row.image_url, "is_main": True}]
-    else:
-        images = []
-
-    product_data = {
-        "id": product_row.id,
-        "group_name": product_row.group_name,
-        "category": product_row.category,
-        "name": product_row.name,
-        "description": product_row.description,
-        "brand": product_row.brand,
-        "price": float(product_row.price) if product_row.price is not None else 0.0,
-        "old_price": float(product_row.old_price) if product_row.old_price is not None else None,
-        "specs": product_row.specs,
-        "specs_map": specs_map,
-        "image_url": product_row.image_url,
-        "images": images,
-        "is_available": product_row.is_available,
-        "badge": product_row.badge,
-        "seo_title": product_row.seo_title,
-        "seo_description": product_row.seo_description,
-        "seo_keywords": product_row.seo_keywords,
-    }
+        product_data["specs_map"] = specs_map
+        product_data["images"] = images
 
     client = await _get_shop_data()
     asyncio.create_task(_record_event("product_view", product_id))

@@ -1758,6 +1758,9 @@ async def cms_add_photo(message: Message, state: FSMContext) -> None:
 @router.message(StateFilter(CmsAddProduct.photos))
 async def cms_add_photo_url(message: Message, state: FSMContext) -> None:
     """Accept a URL as a photo during add-product flow."""
+    if message.photo:
+        await cms_add_photo(message, state)
+        return
     val = (message.text or "").strip()
     data = await state.get_data()
     collected: list[str] = data.get("collected_photos") or []
@@ -1782,6 +1785,7 @@ async def _do_save_product(message: Message, state: FSMContext) -> None:
     category = data.get("category")
     photos: list[str] = data.get("collected_photos") or []
 
+    # ── Step 1: save the Product (always succeeds regardless of ProductImage) ─
     async with AsyncSessionLocal() as session:
         main_url = photos[0] if photos else None
         product = Product(
@@ -1799,15 +1803,6 @@ async def _do_save_product(message: Message, state: FSMContext) -> None:
         session.add(product)
         await session.flush()
 
-        # Save ProductImage rows
-        for idx, url in enumerate(photos):
-            session.add(ProductImage(
-                product_id=product.id,
-                image_url=url,
-                sort_order=idx,
-                is_main=(idx == 0),
-            ))
-
         # Save structured specs
         specs_map = _parse_specs_text(data.get("specs"))
         for spec_name, spec_value in specs_map.items():
@@ -1824,7 +1819,22 @@ async def _do_save_product(message: Message, state: FSMContext) -> None:
                 if existing is None:
                     session.add(CategorySpec(category=category, name=spec_name))
         await session.commit()
-        await session.refresh(product)
+        product_id = product.id
+
+    # ── Step 2: save ProductImage rows (separate transaction, non-fatal) ──────
+    if photos:
+        try:
+            async with AsyncSessionLocal() as session:
+                for idx, url in enumerate(photos):
+                    session.add(ProductImage(
+                        product_id=product_id,
+                        image_url=url,
+                        sort_order=idx,
+                        is_main=(idx == 0),
+                    ))
+                await session.commit()
+        except Exception as exc:
+            logger.warning("Could not save ProductImage rows (table may not exist yet): %s", exc)
 
     await state.clear()
     group_label = f" [{data['group_name']}]" if data.get("group_name") else ""
