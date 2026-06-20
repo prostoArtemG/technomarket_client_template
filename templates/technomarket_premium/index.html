@@ -10,7 +10,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body data-theme="{{ client.theme_name or 'default' }}">
-{#-- Emoji lookup: maps lowercase group/category names to emoji icons --#}
+{#-- Emoji lookup: maps lowercase group/category names to emoji icons.
+     Used as fallback when the DB nav_groups / nav_categories tables have
+     no row (or empty emoji) for a given name.  Primary source is
+     group_meta / cat_meta dicts injected from routes.py. --#}
 {% macro cat_emoji(name) -%}
 {%- set nm = (name or '') | lower -%}
 {%- set _m = {
@@ -20,7 +23,7 @@
   "кондиціонери": "❄️",
   "обігрівачі": "🔥",
   "витяжки": "🏭",
-  "газові плити": "🍳",
+  "газові плити": "🔥",
   "мікрохвильовки": "📡",
   "пилосос": "🧹",
   "пилососи": "🧹",
@@ -30,6 +33,20 @@
   "всі товари": "📦"
 } -%}
 {{- _m[nm] if nm in _m else "🏷️" -}}
+{%- endmacro %}
+{% macro group_emoji(name) -%}
+{%- set nm = (name or '') | lower -%}
+{%- set _g = {
+  "кліматична техніка": "❄️",
+  "водонагрівальна техніка": "🔥",
+  "пральна техніка": "🧺",
+  "кухонна техніка": "🍳",
+  "прибирання": "🧹",
+  "холодильна техніка": "🧊",
+  "вентиляція": "🌬️",
+  "побутова техніка": "🏠"
+} -%}
+{{- _g[nm] if nm in _g else cat_emoji(name) -}}
 {%- endmacro %}
 
 <!-- ╔══════════════════════════════════════════════╗ -->
@@ -116,7 +133,7 @@
         {% set ns.seen = ns.seen + [p.group_name] %}
         <a href="#" class="site-category-card" data-filter-group="{{ p.group_name }}"
            onclick="filterByGroup('{{ p.group_name | replace("'", "\\'") }}', this); return false;">
-          <div class="site-category-emoji">{{ cat_emoji(p.group_name) }}</div>
+          <div class="site-category-emoji">{{ group_meta.get(p.group_name) or group_emoji(p.group_name) }}</div>
           <div class="site-category-title">{{ p.group_name }}</div>
         </a>
       {% endif %}
@@ -141,7 +158,7 @@
         {% set ns4.cats = ns4.cats + [p.category] %}
         <a href="#" class="dp-cat-card" data-filter-cat="{{ p.category }}"
            onclick="filterByCategory('{{ p.category | replace("'", "\\'") }}', this); return false;">
-          <div class="dp-cat-emoji">{{ cat_emoji(p.category) }}</div>
+          <div class="dp-cat-emoji">{{ cat_meta.get(p.category) or cat_emoji(p.category) }}</div>
           <div class="dp-cat-title">{{ p.category }}</div>
         </a>
       {% endif %}

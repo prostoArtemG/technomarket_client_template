@@ -216,3 +216,44 @@ class SiteEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class NavGroup(Base):
+    """Lookup table: emoji and display order for each product group name.
+
+    Keyed by the raw string stored in ``products.group_name``.
+    If a group name has no row here, ``category_meta.group_emoji()``
+    provides a static fallback.
+    """
+
+    __tablename__ = "nav_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    emoji: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="", default=""
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="100", default=100
+    )
+
+
+class NavCategory(Base):
+    """Lookup table: emoji, group association, and display order per category.
+
+    Keyed by the raw string stored in ``products.category``.
+    ``group_name`` loosely links the category to a NavGroup (plain string,
+    no FK constraint so orphan-safe on delete).
+    """
+
+    __tablename__ = "nav_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    emoji: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="", default=""
+    )
+    group_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="100", default=100
+    )

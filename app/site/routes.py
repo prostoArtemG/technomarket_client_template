@@ -9,8 +9,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
+from app.category_meta import category_emoji, group_emoji
 from app.db import AsyncSessionLocal
-from app.models import CategorySpec, Product, ProductImage, ProductSpec, ShopSettings, SiteEvent
+from app.models import CategorySpec, NavCategory, NavGroup, Product, ProductImage, ProductSpec, ShopSettings, SiteEvent
 from app.site.i18n import DEFAULT_LANG, SUPPORTED_LANGS, get_t
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,23 @@ async def _get_shop_data() -> dict:
         "background_image_url": shop.background_image_url,
         "show_background_image": shop.show_background_image,
     }
+
+
+async def _get_nav_meta() -> tuple[dict[str, str], dict[str, str]]:
+    """Return (group_meta, cat_meta) dicts: name → emoji from the DB.
+
+    Only rows with a non-empty emoji string are included; the template
+    falls back to category_meta.group_emoji / category_emoji for the rest.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            groups = list((await session.scalars(select(NavGroup))).all())
+            cats   = list((await session.scalars(select(NavCategory))).all())
+        group_meta = {r.name: r.emoji for r in groups if r.emoji}
+        cat_meta   = {r.name: r.emoji for r in cats   if r.emoji}
+    except Exception:
+        group_meta, cat_meta = {}, {}
+    return group_meta, cat_meta
 
 
 async def _record_event(event_type: str, product_id: Optional[int] = None) -> None:
@@ -158,6 +176,7 @@ async def shop_index(
         ]
 
     client = await _get_shop_data()
+    group_meta, cat_meta = await _get_nav_meta()
     asyncio.create_task(_record_event("site_view"))
 
     response = templates.TemplateResponse(
@@ -169,6 +188,8 @@ async def shop_index(
             "products": products,
             "category_filters": category_filters,
             "event_url": "/api/event",
+            "group_meta": group_meta,
+            "cat_meta": cat_meta,
         },
     )
     response.set_cookie("lang", chosen, max_age=60 * 60 * 24 * 365, samesite="lax")
