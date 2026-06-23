@@ -87,7 +87,7 @@
       <a href="tel:{{ client.phone2 | replace(' ','') | replace('(','') | replace(')','') | replace('-','') }}" class="header-phone">📞 {{ client.phone2 }}</a>
       {% endif %}
       {% if client.viber_url %}
-      <a href="{{ client.viber_url }}" class="header-phone" target="_blank" rel="noopener noreferrer">📲 Viber</a>
+      <a href="{{ client.viber_url }}" class="header-phone" target="_blank" rel="noopener noreferrer"><img src="/static/icons/viber.svg" width="16" height="16" alt="Viber" style="vertical-align:middle;margin-right:4px;">Viber</a>
       {% endif %}
     </div>
     <div class="header-actions">
@@ -381,7 +381,7 @@
       <p><a href="tel:{{ client.phone2 | replace(' ','') | replace('(','') | replace(')','') | replace('-','') }}">📞 {{ client.phone2 }}</a></p>
       {% endif %}
       {% if client.viber_url %}
-      <p>📲 <a href="{{ client.viber_url }}" target="_blank" rel="noopener noreferrer">Viber</a></p>
+      <p><img src="/static/icons/viber.svg" width="15" height="15" alt="Viber" style="vertical-align:middle;margin-right:4px;"><a href="{{ client.viber_url }}" target="_blank" rel="noopener noreferrer">Viber</a></p>
       {% endif %}
       {% if client.telegram_url %}
       <p>💬 <a href="{{ client.telegram_url }}" target="_blank" rel="noopener noreferrer">Telegram</a></p>

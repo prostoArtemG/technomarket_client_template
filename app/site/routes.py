@@ -27,6 +27,41 @@ def _resolve_lang(lang: Optional[str], cookie: Optional[str]) -> str:
     return chosen
 
 
+def _normalize_viber_url(raw: str | None) -> str | None:
+    """Ensure viber_url is always an absolute URL safe to use as href.
+
+    Accepted inputs:
+      - None / empty string         → None
+      - Already valid URL           → returned as-is
+        (starts with http://, https://, viber://, tel:, tg://)
+      - Phone number                → converted to viber://chat?number=<encoded>
+        e.g. "+380501234567" → "viber://chat?number=%2B380501234567"
+
+    Any other bare string (no recognised scheme, no digits that look like a
+    phone number) is returned as-is; it won't cause a server-side 500 even if
+    the browser can't handle it.
+    """
+    import re
+    from urllib.parse import quote
+
+    if not raw:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    # Already has a recognised scheme → safe to use directly
+    if re.match(r'^(https?|viber|tel|tg|ftp)://', raw, re.IGNORECASE):
+        return raw
+    # Looks like a phone number: optional +, digits, spaces, dashes, parens
+    if re.match(r'^[\+\d][\d\s\-\(\)]{5,}$', raw):
+        digits_only = re.sub(r'[\s\-\(\)]', '', raw)
+        if not digits_only.startswith('+'):
+            digits_only = '+' + digits_only
+        return 'viber://chat?number=' + quote(digits_only, safe='')
+    # Anything else — return as-is (may be a full URL without scheme)
+    return raw
+
+
 async def _get_shop_data() -> dict:
     """Return ShopSettings(id=1) as a dict suitable for Jinja2 templates."""
     async with AsyncSessionLocal() as session:
@@ -55,7 +90,7 @@ async def _get_shop_data() -> dict:
         "theme_name": shop.theme_name or "light_red",
         "phone": shop.phone,
         "phone2": shop.phone2,
-        "viber_url": shop.viber_url,
+        "viber_url": _normalize_viber_url(shop.viber_url),
         "address": shop.address,
         "telegram_url": shop.telegram_url,
         "instagram_url": shop.instagram_url,
