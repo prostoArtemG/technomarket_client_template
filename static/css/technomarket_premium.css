@@ -1883,3 +1883,23 @@ body {
 .breadcrumb a { color:#9ca3af; text-decoration:none; } .breadcrumb a:hover { color:#374151; }
 .breadcrumb-sep { color:#d1d5db; }
 .breadcrumb-current { color:#374151; font-weight:600; }
+
+/* ============================================================
+   FAVORITES & RECENTLY VIEWED
+   ============================================================ */
+/* Heart button on catalog cards */
+.fav-btn { background:none; border:none; font-size:20px; cursor:pointer; padding:4px 6px; border-radius:8px; line-height:1; transition:transform .15s; flex-shrink:0; }
+.fav-btn:hover { transform:scale(1.25); }
+.fav-btn.active { color:#ef4444; }
+/* Fav button on product page */
+.fav-btn-product { display:block; width:100%; height:44px; border:1.5px solid #d1d5db; border-radius:14px; background:#fff; color:#374151; font-size:14px; font-weight:600; cursor:pointer; margin-top:10px; transition:border-color .2s,color .2s; }
+.fav-btn-product:hover { border-color:var(--accent); color:var(--accent); }
+.fav-btn-product--active { border-color:#ef4444 !important; color:#ef4444 !important; }
+/* Recently viewed grid */
+.rv-grid { display:flex; gap:14px; flex-wrap:wrap; }
+.rv-card { display:flex; flex-direction:column; align-items:center; width:120px; text-decoration:none; color:#374151; gap:5px; }
+.rv-card:hover .rv-name { color:var(--accent); }
+.rv-img { width:110px; height:80px; object-fit:cover; border-radius:10px; }
+.rv-no-img { width:110px; height:80px; border-radius:10px; background:#f3f4f6; display:flex; align-items:center; justify-content:center; font-size:28px; }
+.rv-name { font-size:12px; font-weight:500; text-align:center; line-height:1.3; max-width:116px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.rv-price { font-size:12px; font-weight:700; color:var(--accent); }

@@ -178,6 +178,9 @@
                 data-ru="В корзину" data-uk="У кошик">
           🛒 У кошик
         </button>
+        <button class="fav-btn-product" id="favBtn" onclick="toggleFavProduct()">
+          ♡ В обране
+        </button>
 
 
       </div><!-- /.product-card -->
@@ -251,6 +254,17 @@
   {% endif %}
 
 </div><!-- /.product-page -->
+
+<!-- ═══════════════════════════════════════ -->
+<!-- ║  RECENTLY VIEWED                                ║ -->
+<!-- ═══════════════════════════════════════ -->
+<div id="recentlyViewedSection" class="prod-info-card" style="display:none;max-width:900px;margin:0 auto 32px;">
+  <div class="prod-info-card-header">
+    <span class="prod-info-card-title">🕐 НЕЩОДАВНО ПЕРЕГЛЯНУТІ</span>
+  </div>
+  <div class="prod-info-card-divider"></div>
+  <div class="rv-grid" id="rvGrid"></div>
+</div>
 
 <!-- ╔══════════════════════════════════════════════╗ -->
 <!-- ║  FOOTER                                      ║ -->
@@ -553,6 +567,54 @@ function submitOrder(e) {
       showToast(_lang==='ru' ? '❌ Ошибка. Попробуйте ещё раз.' : '❌ Помилка. Спробуйте ще раз.');
     });
 }
+
+// ── Favorites ──────────────────────────────────────────────
+var _favorites = JSON.parse(localStorage.getItem('tm_favorites') || '[]');
+function saveFavorites() { localStorage.setItem('tm_favorites', JSON.stringify(_favorites)); }
+function isFavorite(id) { return _favorites.some(function(f){ return f.id === id; }); }
+function toggleFavProduct() {
+  var idx = _favorites.findIndex(function(f){ return f.id === _productId; });
+  if (idx >= 0) {
+    _favorites.splice(idx, 1);
+  } else {
+    _favorites.push({ id: _productId, name: _productName, price: _productPrice, img: _productImg, url: window.location.pathname });
+  }
+  saveFavorites();
+  updateFavBtn();
+  showToast(isFavorite(_productId) ? '\u2764\uFE0F \u0414\u043e\u0434\u0430\u043d\u043e \u0432 \u043e\u0431\u0440\u0430\u043d\u0435' : '\uD83E\uDD0D \u0412\u0438\u0434\u0430\u043b\u0435\u043d\u043e \u0437 \u043e\u0431\u0440\u0430\u043d\u043e\u0433\u043e');
+}
+function updateFavBtn() {
+  var btn = document.getElementById('favBtn');
+  if (!btn) return;
+  var active = isFavorite(_productId);
+  btn.textContent = active ? '\u2764\uFE0F \u0412 \u043e\u0431\u0440\u0430\u043d\u043e\u043c\u0443' : '\u2661 \u0412 \u043e\u0431\u0440\u0430\u043d\u0435';
+  btn.classList.toggle('fav-btn-product--active', active);
+}
+updateFavBtn();
+
+// ── Recently Viewed ────────────────────────────────────────
+var _rv = JSON.parse(localStorage.getItem('tm_recently_viewed') || '[]');
+// Prepend current product, deduplicate, cap at 5
+_rv = _rv.filter(function(r){ return r.id !== _productId; });
+_rv.unshift({ id: _productId, name: _productName, price: _productPrice, img: _productImg, url: window.location.pathname });
+if (_rv.length > 5) _rv = _rv.slice(0, 5);
+localStorage.setItem('tm_recently_viewed', JSON.stringify(_rv));
+
+(function renderRecentlyViewed() {
+  var items = _rv.filter(function(r){ return r.id !== _productId; });
+  if (!items.length) return;
+  var section = document.getElementById('recentlyViewedSection');
+  var grid = document.getElementById('rvGrid');
+  if (!section || !grid) return;
+  grid.innerHTML = items.map(function(item) {
+    return '<a href="' + item.url + '" class="rv-card">' +
+      (item.img ? '<img src="' + item.img + '" class="rv-img" alt="">' : '<div class="rv-no-img">\ud83d\udcf7</div>') +
+      '<div class="rv-name">' + item.name + '</div>' +
+      '<div class="rv-price">' + Math.round(item.price) + ' \u0433\u0440\u043d</div>' +
+      '</a>';
+  }).join('');
+  section.style.display = '';
+})();
 
 // ── Toast ─────────────────────────────────────────────────
 function showToast(msg) {

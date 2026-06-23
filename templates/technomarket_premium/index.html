@@ -320,6 +320,12 @@
                   data-cart-price="{{ product.price | int }}"
                   data-cart-img="{{ product.image_url or '' }}"
                   data-ru="В корзину" data-uk="У кошик">🛒 <span data-ru="В корзину" data-uk="У кошик">У кошик</span></button>
+          <button type="button" class="fav-btn"
+                  data-fav-id="{{ product.id }}"
+                  data-fav-name="{{ ((product.brand or '') ~ ' ' ~ (product.name or '')) | trim }}"
+                  data-fav-price="{{ product.price | int }}"
+                  data-fav-img="{{ product.image_url or '' }}"
+                  aria-label="В обране">🤍</button>
         </div>
       </div>
       {% endfor %}
@@ -860,6 +866,43 @@ document.querySelectorAll('.card[data-pid]').forEach(function(card) {
     }
   });
 });
+
+// ── Favorites ─────────────────────────────────────────
+var _favorites = JSON.parse(localStorage.getItem('tm_favorites') || '[]');
+function saveFavorites() { localStorage.setItem('tm_favorites', JSON.stringify(_favorites)); }
+function isFavorite(id) { return _favorites.some(function(f){ return f.id === id; }); }
+function toggleFavorite(btn) {
+  var id = parseInt(btn.getAttribute('data-fav-id'));
+  var idx = _favorites.findIndex(function(f){ return f.id === id; });
+  if (idx >= 0) {
+    _favorites.splice(idx, 1);
+    showToast('\uD83E\uDD0D Видалено з обраного');
+  } else {
+    _favorites.push({
+      id: id,
+      name: btn.getAttribute('data-fav-name'),
+      price: parseFloat(btn.getAttribute('data-fav-price')),
+      img: btn.getAttribute('data-fav-img') || '',
+      url: '/product/' + id
+    });
+    showToast('\u2764\uFE0F Додано в обране');
+  }
+  saveFavorites();
+  btn.textContent = isFavorite(id) ? '\u2764\uFE0F' : '\uD83E\uDD0D';
+  btn.classList.toggle('active', isFavorite(id));
+}
+function initFavoriteButtons() {
+  document.querySelectorAll('.fav-btn[data-fav-id]').forEach(function(btn) {
+    var id = parseInt(btn.getAttribute('data-fav-id'));
+    btn.textContent = isFavorite(id) ? '\u2764\uFE0F' : '\uD83E\uDD0D';
+    btn.classList.toggle('active', isFavorite(id));
+    btn.addEventListener('click', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      toggleFavorite(btn);
+    });
+  });
+}
+initFavoriteButtons();
 
 // Init
 initCards();
