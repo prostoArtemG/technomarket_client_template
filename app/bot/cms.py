@@ -125,7 +125,7 @@ async def _download_and_upload(bot: Bot, file_id: str, folder: str, kind: str = 
         tmp = f"/tmp/{uuid4()}.jpg"
         try:
             await bot.download_file(tg_file.file_path, tmp)
-            return upload_image_to_cloudinary(tmp, folder=folder, kind=kind)
+            return await asyncio.to_thread(upload_image_to_cloudinary, tmp, folder=folder, kind=kind)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -2144,7 +2144,17 @@ async def cms_add_photo(message: Message, state: FSMContext) -> None:
     # ── Step 1: upload BEFORE acquiring lock (slow I/O, can run concurrently) ─
     photo = message.photo[-1]
     folder = f"{app_settings.cloudinary_folder}/products"
-    url = await _download_and_upload(message.bot, photo.file_id, folder=folder, kind="product")
+    try:
+        url = await _download_and_upload(message.bot, photo.file_id, folder=folder, kind="product")
+    except Exception:
+        logger.exception("Failed to upload product photo")
+        data = await state.get_data()
+        collected = data.get("collected_photos") or []
+        await message.answer(
+            "⚠️ Не вдалося завантажити фото. Спробуйте ще раз або натисніть «Готово».",
+            reply_markup=_photos_progress_kb(len(collected)),
+        )
+        return
     if not url:
         data = await state.get_data()
         collected = data.get("collected_photos") or []
