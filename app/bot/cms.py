@@ -1790,12 +1790,13 @@ async def cms_start_add(cb: CallbackQuery, state: FSMContext) -> None:
 
 
 async def _go_to_category(msg: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    selected_group = data.get("group_name")
     async with AsyncSessionLocal() as session:
-        cats = list(await session.scalars(
-            select(Product.category)
-            .where(Product.category.isnot(None))
-            .distinct().order_by(Product.category)
-        ))
+        q = select(Product.category).where(Product.category.isnot(None))
+        if selected_group:
+            q = q.where(Product.group_name == selected_group)
+        cats = list(await session.scalars(q.distinct().order_by(Product.category)))
     await state.update_data(possible_categories=cats)
     await state.set_state(CmsAddProduct.category)
     await msg.answer("Крок 2 — Виберіть або введіть категорію:", reply_markup=_categories_kb(cats))
