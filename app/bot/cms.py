@@ -2204,6 +2204,12 @@ async def cms_add_photo_url(message: Message, state: FSMContext) -> None:
         # Empty or dash typed → skip photos, save product now
         await _do_save_product(message, state)
         return
+    if val in ("✅ Готово", "Готово", "готово"):
+        await _do_save_product(message, state)
+        return
+    if val in ("⏭ Пропустити", "⏭️ Пропустити", "Пропустити", "пропустити"):
+        await _do_save_product(message, state)
+        return
 
     # URL provided — add with same lock-based serialisation
     lock = _get_photo_add_lock(message.from_user.id)
