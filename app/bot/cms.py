@@ -2234,50 +2234,72 @@ async def cms_add_photo_url(message: Message, state: FSMContext) -> None:
 
 async def _do_save_product(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    old_price_val = Decimal(data["old_price"]) if data.get("old_price") else None
-    category = data.get("category")
-    photos: list[str] = data.get("collected_photos") or []
 
     # Normalise description and specs before saving
     clean_desc = _clean_description(data.get("description"))
     specs_list = _parse_specs_text(data.get("specs"))
     clean_specs = _specs_text_from_list(specs_list)  # "К: В\nК: В\n..." or None
 
-    # ── Step 1: save the Product (always succeeds regardless of ProductImage) ─
-    async with AsyncSessionLocal() as session:
-        main_url = photos[0] if photos else None
-        product = Product(
-            name=data["name"],
-            group_name=data.get("group_name"),
-            category=category,
-            brand=data.get("brand"),
-            description=clean_desc,
-            specs=clean_specs,
-            price=Decimal(data["price"]),
-            old_price=old_price_val,
-            image_url=main_url,
-            is_available=True,
-        )
-        session.add(product)
-        await session.flush()
+    logger.info("SAVE PRODUCT specs raw=%r", data.get("specs"))
+    logger.info("SAVE PRODUCT specs_list=%r", specs_list)
 
-        # Save structured specs
-        specs_list = _parse_specs_text(data.get("specs"))
-        for spec_name, spec_value in specs_list:
-            session.add(ProductSpec(product_id=product.id, name=spec_name, value=spec_value))
-        # Upsert CategorySpec entries
-        if category:
-            for spec_name, _ in specs_list:
-                existing = await session.scalar(
-                    select(CategorySpec).where(
-                        CategorySpec.category == category,
-                        CategorySpec.name == spec_name,
+    old_price_val = Decimal(data["old_price"]) if data.get("old_price") else None
+    category = data.get("category")
+    photos: list[str] = data.get("collected_photos") or []
+
+    # ── Step 1: save the Product + ProductSpec rows ───────────────────────────
+    try:
+        async with AsyncSessionLocal() as session:
+            main_url = photos[0] if photos else None
+            product = Product(
+                name=data["name"],
+                group_name=data.get("group_name"),
+                category=category,
+                brand=data.get("brand"),
+                description=clean_desc,
+                specs=clean_specs,
+                price=Decimal(data["price"]),
+                old_price=old_price_val,
+                image_url=main_url,
+                is_available=True,
+            )
+            session.add(product)
+            await session.flush()  # generates product.id
+
+            # Save structured specs (skip empty names/values)
+            seen_spec_names: set[str] = set()
+            for spec_name, spec_value in specs_list:
+                if not spec_name or not spec_value:
+                    continue
+                session.add(ProductSpec(product_id=product.id, name=spec_name, value=spec_value))
+                seen_spec_names.add(spec_name)
+
+            # Upsert CategorySpec entries — guard against duplicates within session
+            if category:
+                seen_cat_specs: set[str] = set()
+                for spec_name in seen_spec_names:
+                    if spec_name in seen_cat_specs:
+                        continue
+                    existing = await session.scalar(
+                        select(CategorySpec).where(
+                            CategorySpec.category == category,
+                            CategorySpec.name == spec_name,
+                        )
                     )
-                )
-                if existing is None:
-                    session.add(CategorySpec(category=category, name=spec_name))
-        await session.commit()
-        product_id = product.id
+                    if existing is None:
+                        session.add(CategorySpec(category=category, name=spec_name))
+                    seen_cat_specs.add(spec_name)
+
+            await session.commit()
+            product_id = product.id
+    except Exception:
+        logger.exception("Failed to save product")
+        await message.answer(
+            "⚠️ Не вдалося зберегти товар. Перевірте характеристики або спробуйте без них.",
+            reply_markup=main_menu(),
+        )
+        await state.clear()
+        return
 
     # ── Step 2: save ProductImage rows (separate transaction, non-fatal) ──────
     if photos:
