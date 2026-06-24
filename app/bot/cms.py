@@ -2716,22 +2716,32 @@ async def cms_filters_menu(message: Message, state: FSMContext) -> None:
     await _filt_show_categories(message, state)
 
 
-@router.callback_query(F.data.startswith("cms:filt:cat:"), StateFilter(CmsFilters.category_select))
+@router.callback_query(F.data.startswith("cms:filt:cat:"))
 async def cms_filt_cat_select(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
-    data = await state.get_data()
     try:
         idx = int(cb.data.split(":")[-1])
     except ValueError:
         return
-    categories = data.get("filt_categories", [])
+    data = await state.get_data()
+    categories: list[str] = data.get("filt_categories") or []
+    if not categories:
+        # FSM state was lost (bot restart) — re-fetch from DB
+        async with AsyncSessionLocal() as session:
+            rows = list((await session.scalars(
+                select(Product.category).distinct().where(Product.category.isnot(None))
+            )).all())
+        categories = sorted([r for r in rows if r])
+        await state.update_data(filt_categories=categories)
+    await state.set_state(CmsFilters.category_select)
     if idx >= len(categories):
+        await cb.message.answer("⚠️ Категорія не знайдена. Натисніть «🧩 Фільтри» знову.")
         return
     category = categories[idx]
     await _filt_show_specs(cb, state, category)
 
 
-@router.callback_query(F.data.startswith("cms:filt:toggle:"), StateFilter(CmsFilters.spec_list))
+@router.callback_query(F.data.startswith("cms:filt:toggle:"))
 async def cms_filt_toggle(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     data = await state.get_data()
@@ -2739,9 +2749,15 @@ async def cms_filt_toggle(cb: CallbackQuery, state: FSMContext) -> None:
         idx = int(cb.data.split(":")[-1])
     except ValueError:
         return
-    specs: list[list] = data.get("filt_specs", [])
-    category: str = data.get("filt_current_cat", "")
-    if idx >= len(specs):
+    specs: list[list] = data.get("filt_specs") or []
+    category: str = data.get("filt_current_cat") or ""
+
+    if not category or idx >= len(specs):
+        # FSM state was lost (bot restart) — cannot recover without knowing the category
+        await cb.message.answer(
+            "⚠️ Сесія фільтрів застаріла (бот перезапущено).\n"
+            "Натисніть «🧩 Фільтри» ще раз, щоб продовжити."
+        )
         return
 
     name, current = specs[idx]
@@ -2765,10 +2781,13 @@ async def cms_filt_toggle(cb: CallbackQuery, state: FSMContext) -> None:
     await _filt_show_specs(cb, state, category, edit=True)
 
 
-@router.callback_query(F.data == "cms:filt:sync", StateFilter(CmsFilters.spec_list))
+@router.callback_query(F.data == "cms:filt:sync")
 async def cms_filt_sync(cb: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    category: str = data.get("filt_current_cat", "")
+    category: str = data.get("filt_current_cat") or ""
+    if not category:
+        await cb.answer("⚠️ Сесія застаріла. Натисніть «🧩 Фільтри» знову.", show_alert=True)
+        return
 
     async with AsyncSessionLocal() as session:
         # Discover all spec names for this category from products
@@ -2799,13 +2818,11 @@ async def cms_filt_sync(cb: CallbackQuery, state: FSMContext) -> None:
     await _filt_show_specs(cb, state, category, edit=True)
 
 
-@router.callback_query(F.data == "cms:filt:back", StateFilter(CmsFilters.spec_list))
+@router.callback_query(F.data == "cms:filt:back")
 async def cms_filt_back(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     await _filt_show_categories(cb, state)
 
-
-# ── 👥 Управління (Admin management) ─────────────────────────────────────────
 
 def _admins_text(env_ids: frozenset[int], db_admins: list[ShopAdmin]) -> str:
     lines = ["👥 <b>Управління адміністраторами</b>\n"]
