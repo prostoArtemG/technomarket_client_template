@@ -1961,8 +1961,8 @@ body {
 .back-link { display:inline-block; margin-bottom:16px; color:#374151; text-decoration:none; font-weight:bold; font-size:14px; }
 .back-link:hover { color:#111827; }
 .product-grid { display:grid; grid-template-columns:1fr 1fr; gap:28px; align-items:start; }
-.product-gallery { background:white; border-radius:18px; padding:16px; box-shadow:0 6px 20px rgba(0,0,0,.07); display:flex; flex-direction:column; gap:12px; }
-.gallery-stage { position: relative; }
+.product-gallery { background:white; border-radius:18px; padding:16px; box-shadow:0 6px 20px rgba(0,0,0,.07); display:flex; flex-direction:column; gap:12px; overflow:hidden; }
+.gallery-stage { position: relative; overflow:hidden; }
 .main-image { width:100%; height:480px; object-fit:contain; background:#f9fafb; border-radius:12px; display:block; cursor:zoom-in; }
 .gallery-nav {
     position: absolute;
@@ -1981,17 +1981,22 @@ body {
     justify-content: center;
     cursor: pointer;
     z-index: 2;
+    touch-action: manipulation;
 }
 .gallery-nav-prev { left: 12px; }
 .gallery-nav-next { right: 12px; }
-.gallery-thumbs-wrap { display: flex; align-items: center; gap: 8px; }
+.gallery-thumbs-wrap { display: flex; align-items: center; gap: 8px; min-width:0; }
 .gallery-thumbs {
     display: flex;
     gap: 8px;
     overflow-x: auto;
+    overflow-y: hidden;
     scroll-behavior: smooth;
     padding-bottom: 2px;
     flex: 1;
+    min-width: 0;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
 }
 .gallery-thumb {
     width: 72px;
@@ -2015,6 +2020,7 @@ body {
     line-height: 1;
     cursor: pointer;
     flex-shrink: 0;
+    touch-action: manipulation;
 }
 .thumbs-row { width:100%; display:grid; grid-template-columns:repeat(5,1fr); gap:8px; padding:8px 4px 4px; }
 .thumb-img { width:100%; aspect-ratio:1/1; object-fit:contain; border-radius:10px; cursor:pointer; background:#f9fafb; padding:4px; opacity:.75; border:2px solid transparent; box-sizing:border-box; display:block; transition:opacity .15s,border-color .15s; }
@@ -2022,9 +2028,9 @@ body {
 .product-info { display:block; align-self:start; }
 .product-card { background:white; border-radius:16px; padding:22px; box-shadow:0 6px 20px rgba(0,0,0,.06); }
 .product-meta { display:flex; gap:12px; align-items:center; margin-bottom:10px; }
-.product-title { margin:8px 0 14px; display:flex; flex-direction:column; gap:4px; line-height:1.15; }
-.product-brand-name { color:#111827; font-size:20px; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }
-.product-model-name { color:#374151; font-size:30px; font-weight:700; }
+.product-title { margin:8px 0 14px; display:flex; flex-direction:column; gap:4px; line-height:1.12; }
+.product-brand-name { color:#111827; font-size:28px; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }
+.product-model-name { color:#6b7280; font-size:21px; font-weight:700; }
 .desc { font-size:13px; color:#6b7280; margin-top:8px; line-height:1.6; }
 .specs-box { margin-top:16px; padding:16px; background:#f9fafb; border-radius:12px; }
 .specs-box h3 { margin:0 0 12px; font-size:15px; font-weight:700; }
@@ -2070,8 +2076,8 @@ body {
     .main-image { height:320px; }
     .gallery-nav { width:36px; height:36px; font-size:24px; }
     .gallery-thumb { width:64px; height:64px; }
-    .product-brand-name { font-size:18px; }
-    .product-model-name { font-size:26px; }
+    .product-brand-name { font-size:24px; }
+    .product-model-name { font-size:18px; }
     .thumbs-row { grid-template-columns:repeat(4,1fr); }
     .prod-info-card { padding:16px; }
 }
@@ -2079,9 +2085,9 @@ body {
     .main-image { height:260px; }
     .gallery-thumbs-wrap { gap:6px; }
     .gallery-strip-nav { width:30px; height:30px; font-size:20px; }
-    .gallery-thumb { width:58px; height:58px; }
-    .product-brand-name { font-size:16px; }
-    .product-model-name { font-size:22px; }
+    .gallery-thumb { width:56px; height:56px; }
+    .product-brand-name { font-size:20px; }
+    .product-model-name { font-size:16px; }
     .thumbs-row { grid-template-columns:repeat(3,1fr); }
 }
 

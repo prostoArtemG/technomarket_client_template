@@ -116,7 +116,7 @@
       {% if main_url %}
       <div class="gallery-stage">
         {% if product.images | length > 1 %}
-        <button type="button" class="gallery-nav gallery-nav-prev" onclick="galleryPrev()" aria-label="Попереднє фото">‹</button>
+        <button type="button" class="gallery-nav gallery-nav-prev" onclick="galleryPrev(event)" aria-label="Попереднє фото">‹</button>
         {% endif %}
         <img src="{{ main_url }}"
              alt="{{ (product.brand or '') ~ ' ' ~ product.name }}"
@@ -125,22 +125,22 @@
              onclick="openLightbox(this.src)"
              title="Натисніть для збільшення">
         {% if product.images | length > 1 %}
-        <button type="button" class="gallery-nav gallery-nav-next" onclick="galleryNext()" aria-label="Наступне фото">›</button>
+        <button type="button" class="gallery-nav gallery-nav-next" onclick="galleryNext(event)" aria-label="Наступне фото">›</button>
         {% endif %}
       </div>
       {% if product.images | length > 1 %}
       <div class="gallery-thumbs-wrap">
-        <button type="button" class="gallery-strip-nav gallery-strip-prev" onclick="galleryThumbsScroll(-1)" aria-label="Прокрутити мініатюри вліво">‹</button>
+        <button type="button" class="gallery-strip-nav gallery-strip-prev" onclick="galleryThumbsScroll(event, -1)" aria-label="Прокрутити мініатюри вліво">‹</button>
         <div class="gallery-thumbs" id="galleryThumbs">
         {% for img in product.images %}
         <img src="{{ img.url }}"
              alt="Фото {{ loop.index }}"
              data-gallery-index="{{ loop.index0 }}"
              class="gallery-thumb{% if img.is_main %} active{% endif %}"
-             onclick="galleryShow({{ loop.index0 }})">
+             onclick="galleryShow({{ loop.index0 }}, event)">
         {% endfor %}
         </div>
-        <button type="button" class="gallery-strip-nav gallery-strip-next" onclick="galleryThumbsScroll(1)" aria-label="Прокрутити мініатюри вправо">›</button>
+        <button type="button" class="gallery-strip-nav gallery-strip-next" onclick="galleryThumbsScroll(event, 1)" aria-label="Прокрутити мініатюри вправо">›</button>
       </div>
       {% endif %}
       {% else %}
@@ -633,7 +633,11 @@ _galleryIndex = {{ loop.index0 }};
 {% endif %}
 {% endfor %}
 
-function galleryShow(index) {
+function galleryShow(index, evt) {
+  if (evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+  }
   if (!_galleryImages.length) return;
   if (index < 0) index = _galleryImages.length - 1;
   if (index >= _galleryImages.length) index = 0;
@@ -643,21 +647,28 @@ function galleryShow(index) {
   document.querySelectorAll('.gallery-thumb').forEach(function(thumb, idx) {
     thumb.classList.toggle('active', idx === index);
   });
+  var strip = document.getElementById('galleryThumbs');
   var activeThumb = document.querySelector('.gallery-thumb.active');
-  if (activeThumb) {
-    activeThumb.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  if (strip && activeThumb) {
+    var thumbLeft = activeThumb.offsetLeft;
+    var thumbCenter = thumbLeft - (strip.clientWidth / 2) + (activeThumb.clientWidth / 2);
+    strip.scrollTo({ left: Math.max(thumbCenter, 0), behavior: 'smooth' });
   }
 }
 
-function galleryPrev() {
-  galleryShow(_galleryIndex - 1);
+function galleryPrev(evt) {
+  galleryShow(_galleryIndex - 1, evt);
 }
 
-function galleryNext() {
-  galleryShow(_galleryIndex + 1);
+function galleryNext(evt) {
+  galleryShow(_galleryIndex + 1, evt);
 }
 
-function galleryThumbsScroll(direction) {
+function galleryThumbsScroll(evt, direction) {
+  if (evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+  }
   var strip = document.getElementById('galleryThumbs');
   if (!strip) return;
   strip.scrollBy({ left: direction * 220, behavior: 'smooth' });
