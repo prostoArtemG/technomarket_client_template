@@ -114,21 +114,33 @@
       {% set main_img = product.images | selectattr('is_main') | first if product.images else none %}
       {% set main_url = main_img.url if main_img else product.image_url %}
       {% if main_url %}
-      <img src="{{ main_url }}"
-           alt="{{ (product.brand or '') ~ ' ' ~ product.name }}"
-           class="main-image"
-           id="mainImg"
-           onclick="openLightbox(this.src)"
-           title="Натисніть для збільшення">
+      <div class="gallery-stage">
+        {% if product.images | length > 1 %}
+        <button type="button" class="gallery-nav gallery-nav-prev" onclick="galleryPrev()" aria-label="Попереднє фото">‹</button>
+        {% endif %}
+        <img src="{{ main_url }}"
+             alt="{{ (product.brand or '') ~ ' ' ~ product.name }}"
+             class="main-image"
+             id="mainImg"
+             onclick="openLightbox(this.src)"
+             title="Натисніть для збільшення">
+        {% if product.images | length > 1 %}
+        <button type="button" class="gallery-nav gallery-nav-next" onclick="galleryNext()" aria-label="Наступне фото">›</button>
+        {% endif %}
+      </div>
       {% if product.images | length > 1 %}
-      <div class="gallery-thumbs" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <div class="gallery-thumbs-wrap">
+        <button type="button" class="gallery-strip-nav gallery-strip-prev" onclick="galleryThumbsScroll(-1)" aria-label="Прокрутити мініатюри вліво">‹</button>
+        <div class="gallery-thumbs" id="galleryThumbs">
         {% for img in product.images %}
         <img src="{{ img.url }}"
              alt="Фото {{ loop.index }}"
+             data-gallery-index="{{ loop.index0 }}"
              class="gallery-thumb{% if img.is_main %} active{% endif %}"
-             onclick="document.getElementById('mainImg').src=this.src; document.querySelectorAll('.gallery-thumb').forEach(function(t){t.classList.remove('active');}); this.classList.add('active');"
-             style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid {% if img.is_main %}var(--accent){% else %}transparent{% endif %};">
+             onclick="galleryShow({{ loop.index0 }})">
         {% endfor %}
+        </div>
+        <button type="button" class="gallery-strip-nav gallery-strip-next" onclick="galleryThumbsScroll(1)" aria-label="Прокрутити мініатюри вправо">›</button>
       </div>
       {% endif %}
       {% else %}
@@ -151,7 +163,10 @@
         </div>
 
         <!-- Title -->
-        <h1 class="product-title">{% if product.brand %}<span style="color:#9ca3af;font-weight:700;font-size:0.75em;">{{ product.brand }}</span><br>{% endif %}{{ product.name }}</h1>
+        <h1 class="product-title">
+          {% if product.brand %}<span class="product-brand-name">{{ product.brand }}</span>{% endif %}
+          <span class="product-model-name">{{ product.name }}</span>
+        </h1>
 
         <!-- Availability -->
         <div class="product-availability">
@@ -604,6 +619,49 @@ function updateFavBtn() {
   btn.classList.toggle('fav-btn-product--active', active);
 }
 updateFavBtn();
+
+// ── Product gallery ───────────────────────────────────────
+var _galleryImages = [
+  {% for img in product.images %}
+  '{{ img.url|replace("'","\\'") }}'{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+var _galleryIndex = 0;
+{% for img in product.images %}
+{% if img.is_main %}
+_galleryIndex = {{ loop.index0 }};
+{% endif %}
+{% endfor %}
+
+function galleryShow(index) {
+  if (!_galleryImages.length) return;
+  if (index < 0) index = _galleryImages.length - 1;
+  if (index >= _galleryImages.length) index = 0;
+  _galleryIndex = index;
+  var main = document.getElementById('mainImg');
+  if (main) main.src = _galleryImages[index];
+  document.querySelectorAll('.gallery-thumb').forEach(function(thumb, idx) {
+    thumb.classList.toggle('active', idx === index);
+  });
+  var activeThumb = document.querySelector('.gallery-thumb.active');
+  if (activeThumb) {
+    activeThumb.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+}
+
+function galleryPrev() {
+  galleryShow(_galleryIndex - 1);
+}
+
+function galleryNext() {
+  galleryShow(_galleryIndex + 1);
+}
+
+function galleryThumbsScroll(direction) {
+  var strip = document.getElementById('galleryThumbs');
+  if (!strip) return;
+  strip.scrollBy({ left: direction * 220, behavior: 'smooth' });
+}
 
 // ── Recently Viewed ────────────────────────────────────────
 var _rv = JSON.parse(localStorage.getItem('tm_recently_viewed') || '[]');

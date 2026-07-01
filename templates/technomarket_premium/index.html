@@ -123,17 +123,15 @@
     <button type="button" class="dp-show-all-btn" id="dpGroupsToggle" onclick="dpToggleShowAll('groups')">Показати всі ↓</button>
   </div>
   <section class="site-categories" id="categoryNav" aria-label="Категорії">
-    <a href="#" class="site-category-card active" data-filter-group="" onclick="filterByGroup('', this); return false;">
-      <div class="site-category-emoji">📦</div>
+    <a href="#" class="site-category-card group-nav-card active" data-filter-group="" onclick="filterByGroup('', this); return false;">
       <div class="site-category-title" data-ru="Все товары" data-uk="Всі товари">Всі товари</div>
     </a>
     {% set ns = namespace(seen=[]) %}
     {% for p in products %}
       {% if p.group_name and p.group_name not in ns.seen %}
         {% set ns.seen = ns.seen + [p.group_name] %}
-        <a href="#" class="site-category-card" data-filter-group="{{ p.group_name }}"
+        <a href="#" class="site-category-card group-nav-card" data-filter-group="{{ p.group_name }}"
            onclick="filterByGroup('{{ p.group_name | replace("'", "\\'") }}', this); return false;">
-          <div class="site-category-emoji">{{ group_meta.get(p.group_name) or group_emoji(p.group_name) }}</div>
           <div class="site-category-title">{{ p.group_name }}</div>
         </a>
       {% endif %}
@@ -190,14 +188,14 @@
               placeholder="Пошук товарів..."
               data-placeholder-ru="Поиск товаров..."
               data-placeholder-uk="Пошук товарів..."
-              oninput="applyFilters()" autocomplete="off">
+              autocomplete="off">
             <button type="button" id="searchBtn" onclick="applyFilters()"
               data-ru="Найти" data-uk="Знайти">Знайти</button>
           </div>
 
           <div class="search-filters-row">
             <!-- Brand -->
-            <select id="brandSelect" class="brand-select" onchange="applyFilters()">
+            <select id="brandSelect" class="brand-select">
               <option value="" data-ru="Все бренды" data-uk="Усі бренди">Усі бренди</option>
               {% set ns2 = namespace(brands=[]) %}
               {% for p in products %}{% if p.brand and p.brand not in ns2.brands %}{% set ns2.brands = ns2.brands + [p.brand] %}{% endif %}{% endfor %}
@@ -207,14 +205,14 @@
             <!-- Price min/max -->
             <input type="number" id="priceMin" class="price-input"
               placeholder="Ціна від" data-placeholder-ru="Цена от" data-placeholder-uk="Ціна від"
-              min="0" oninput="applyFilters()">
+              min="0">
             <input type="number" id="priceMax" class="price-input"
               placeholder="Ціна до" data-placeholder-ru="Цена до" data-placeholder-uk="Ціна до"
-              min="0" oninput="applyFilters()">
+              min="0">
 
             <!-- In stock -->
             <label class="in-stock-label">
-              <input type="checkbox" id="inStockCheck" onchange="applyFilters()">
+              <input type="checkbox" id="inStockCheck">
               <span data-ru="Только в наличии" data-uk="Тільки в наявності">Тільки в наявності</span>
             </label>
           </div>
@@ -684,8 +682,8 @@ function updateSpecFilters() {
     html += '<div class="filter-group" style="margin-bottom:10px;">';
     html += '<div style="font-size:12px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">' + _escHtml(specName) + '</div>';
     vals.forEach(function(val) {
-      html += '<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#d1d5db;cursor:pointer;margin-bottom:3px;">';
-      html += '<input type="checkbox" class="spec-check" data-spec-name="' + _escHtml(specName) + '" data-spec-value="' + _escHtml(val) + '" onchange="applyFilters()">';
+      html += '<label class="spec-filter-option">';
+      html += '<input type="checkbox" class="spec-check" data-spec-name="' + _escHtml(specName) + '" data-spec-value="' + _escHtml(val) + '">';
       html += ' ' + _escHtml(val) + '</label>';
     });
     html += '</div>';
