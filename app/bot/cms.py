@@ -10,6 +10,7 @@ Sections:
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -779,6 +780,106 @@ def _specs_list_text(items: list) -> str:
     return f"Поточні характеристики:\n{lines}\n\nДодайте ще або натисніть кнопку:"
 
 
+def _normalize_spec_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    clean: list[tuple[str, str]] = []
+    for name, value in pairs:
+        n = " ".join((name or "").split()).strip()
+        v = " ".join((value or "").split()).strip()
+        if n and v:
+            clean.append((n, v))
+    return clean
+
+
+def _product_specs_editor_text(product: "Product", pairs: list[tuple[str, str]]) -> str:
+    lines = [
+        f"📋 <b>Характеристики товару #{product.id}</b>",
+        f"<b>{product.name}</b>",
+        "",
+    ]
+    if not pairs:
+        lines.append("<i>Поки що характеристик немає.</i>")
+    else:
+        lines.append("<b>Поточний список:</b>")
+        lines.extend(f"{idx}. <b>{name}</b>: {value}" for idx, (name, value) in enumerate(pairs, start=1))
+    lines.extend([
+        "",
+        "Що можна зробити:",
+        "• додати нову характеристику",
+        "• відкрити конкретну характеристику і змінити її",
+        "• перейти до старого режиму редагування всім текстом",
+    ])
+    return "\n".join(lines)
+
+
+def _product_specs_editor_kb(prod_id: int, page: int, pairs: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for idx, (name, _value) in enumerate(pairs):
+        short = name if len(name) <= 28 else name[:25] + "..."
+        rows.append([InlineKeyboardButton(
+            text=f"✏️ {idx + 1}. {short}",
+            callback_data=f"cms:psv:{prod_id}:{page}:{idx}",
+        )])
+    rows.append([InlineKeyboardButton(text="➕ Додати характеристику", callback_data=f"cms:psadd:{prod_id}:{page}")])
+    rows.append([InlineKeyboardButton(text="✍️ Редагувати все текстом", callback_data=f"cms:psraw:{prod_id}:{page}")])
+    rows.append([InlineKeyboardButton(text="← Назад до товару", callback_data=f"cms:pv:{prod_id}:{page}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _product_spec_item_text(product: "Product", idx: int, total: int, name: str, value: str) -> str:
+    return (
+        f"📋 <b>Характеристика {idx + 1} з {total}</b>\n"
+        f"<b>{product.name}</b>\n\n"
+        f"<b>Назва:</b> {name}\n"
+        f"<b>Значення:</b> {value}\n\n"
+        "Можна змінити назву, значення або видалити цю характеристику."
+    )
+
+
+def _product_spec_item_kb(prod_id: int, page: int, idx: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Змінити назву", callback_data=f"cms:psren:{prod_id}:{page}:{idx}")],
+        [InlineKeyboardButton(text="📝 Змінити значення", callback_data=f"cms:psval:{prod_id}:{page}:{idx}")],
+        [InlineKeyboardButton(text="🗑 Видалити характеристику", callback_data=f"cms:psdel:{prod_id}:{page}:{idx}")],
+        [InlineKeyboardButton(text="↩️ До списку характеристик", callback_data=f"cms:psm:{prod_id}:{page}")],
+    ])
+
+
+async def _load_product_spec_pairs(session, prod_id: int) -> tuple["Product | None", list[tuple[str, str]]]:
+    product = await session.get(Product, prod_id)
+    if product is None:
+        return None, []
+    spec_rows = list((await session.scalars(
+        select(ProductSpec).where(ProductSpec.product_id == prod_id).order_by(ProductSpec.id)
+    )).all())
+    if spec_rows:
+        return product, [(r.name, r.value) for r in spec_rows if r.name and r.value]
+    return product, _normalize_spec_pairs(_parse_specs_text(product.specs))
+
+
+async def _save_product_spec_pairs(session, product: "Product", pairs: list[tuple[str, str]]) -> None:
+    pairs = _normalize_spec_pairs(pairs)
+    await session.execute(delete(ProductSpec).where(ProductSpec.product_id == product.id))
+    product.specs = _specs_text_from_list(pairs)
+    for spec_name, spec_value in pairs:
+        session.add(ProductSpec(product_id=product.id, name=spec_name, value=spec_value))
+    if product.category:
+        seen_names: set[str] = set()
+        for spec_name, _ in pairs:
+            if spec_name in seen_names:
+                continue
+            existing = await session.scalar(
+                select(CategorySpec).where(
+                    CategorySpec.category == product.category,
+                    CategorySpec.name == spec_name,
+                )
+            )
+            if existing is None:
+                session.add(CategorySpec(category=product.category, name=spec_name))
+            seen_names.add(spec_name)
+    await session.commit()
+    await session.refresh(product)
+
+
 def _site_url_for_product(product_id: int) -> str:
     from app.config import settings as app_settings
     base = (app_settings.site_url or "").rstrip("/")
@@ -823,6 +924,10 @@ class CmsSettings(StatesGroup):
 class CmsEditProduct(StatesGroup):
     edit_field = State()
     edit_image = State()
+    spec_add_name = State()
+    spec_add_value = State()
+    spec_edit_name = State()
+    spec_edit_value = State()
 
 
 class CmsProductSearch(StatesGroup):
@@ -934,6 +1039,19 @@ async def cms_prod_edit_start(cb: CallbackQuery, state: FSMContext) -> None:
         await cb.answer("Товар не знайдено", show_alert=True)
         return
     await state.update_data(edit_prod_id=prod_id, edit_prod_page=page)
+    if field == "specs":
+        async with AsyncSessionLocal() as session:
+            product, pairs = await _load_product_spec_pairs(session, prod_id)
+        if product is None:
+            await cb.answer("Товар не знайдено", show_alert=True)
+            return
+        await cb.message.answer(
+            _product_specs_editor_text(product, pairs),
+            parse_mode="HTML",
+            reply_markup=_product_specs_editor_kb(prod_id, page, pairs),
+        )
+        await cb.answer()
+        return
     if field == "image":
         await state.set_state(CmsEditProduct.edit_image)
         await cb.message.answer(
@@ -950,6 +1068,268 @@ async def cms_prod_edit_start(cb: CallbackQuery, state: FSMContext) -> None:
             parse_mode="HTML",
         )
     await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:psm:"))
+async def cms_prod_specs_menu(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+    if product is None:
+        await cb.answer("Товар не знайдено", show_alert=True)
+        return
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page)
+    await cb.message.edit_text(
+        _product_specs_editor_text(product, pairs),
+        parse_mode="HTML",
+        reply_markup=_product_specs_editor_kb(prod_id, page, pairs),
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:psv:"))
+async def cms_prod_spec_view(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3])
+        idx = int(parts[4])
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+    if product is None:
+        await cb.answer("Товар не знайдено", show_alert=True)
+        return
+    if idx < 0 or idx >= len(pairs):
+        await cb.answer("Характеристику не знайдено", show_alert=True)
+        return
+    name, value = pairs[idx]
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page, edit_spec_idx=idx)
+    await cb.message.edit_text(
+        _product_spec_item_text(product, idx, len(pairs), name, value),
+        parse_mode="HTML",
+        reply_markup=_product_spec_item_kb(prod_id, page, idx),
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:psadd:"))
+async def cms_prod_spec_add_start(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3])
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page)
+    await state.set_state(CmsEditProduct.spec_add_name)
+    await cb.message.answer("📋 Введіть назву нової характеристики:\n<i>/cancel для скасування</i>", parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:psren:"))
+async def cms_prod_spec_rename_start(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3])
+        idx = int(parts[4])
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+    if product is None or idx < 0 or idx >= len(pairs):
+        await cb.answer("Характеристику не знайдено", show_alert=True)
+        return
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page, edit_spec_idx=idx)
+    await state.set_state(CmsEditProduct.spec_edit_name)
+    await cb.message.answer(
+        f"✏️ Поточна назва: <b>{pairs[idx][0]}</b>\n\nВведіть нову назву характеристики:\n<i>/cancel для скасування</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:psval:"))
+async def cms_prod_spec_value_start(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3])
+        idx = int(parts[4])
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+    if product is None or idx < 0 or idx >= len(pairs):
+        await cb.answer("Характеристику не знайдено", show_alert=True)
+        return
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page, edit_spec_idx=idx)
+    await state.set_state(CmsEditProduct.spec_edit_value)
+    await cb.message.answer(
+        f"📝 <b>{pairs[idx][0]}</b>\nПоточне значення: {pairs[idx][1]}\n\nВведіть нове значення:\n<i>/cancel для скасування</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("cms:psdel:"))
+async def cms_prod_spec_delete(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3])
+        idx = int(parts[4])
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+        if product is None or idx < 0 or idx >= len(pairs):
+            await cb.answer("Характеристику не знайдено", show_alert=True)
+            return
+        deleted_name = pairs[idx][0]
+        del pairs[idx]
+        await _save_product_spec_pairs(session, product, pairs)
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page)
+    await cb.message.edit_text(
+        _product_specs_editor_text(product, pairs) + f"\n\n✅ Видалено: <b>{deleted_name}</b>",
+        parse_mode="HTML",
+        reply_markup=_product_specs_editor_kb(prod_id, page, pairs),
+    )
+    await cb.answer("Характеристику видалено")
+
+
+@router.callback_query(F.data.startswith("cms:psraw:"))
+async def cms_prod_specs_raw_edit(cb: CallbackQuery, state: FSMContext) -> None:
+    parts = cb.data.split(":")
+    try:
+        prod_id = int(parts[2])
+        page = int(parts[3])
+    except (ValueError, IndexError):
+        await cb.answer("Помилка", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, prod_id)
+    if product is None:
+        await cb.answer("Товар не знайдено", show_alert=True)
+        return
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page, edit_prod_field="specs")
+    await state.set_state(CmsEditProduct.edit_field)
+    current_specs = html.escape(product.specs or "—")
+    await cb.message.answer(
+        "📋 Режим повного редагування характеристик\n\n"
+        f"<b>Поточний текст:</b>\n<code>{current_specs[:1500]}</code>\n\n"
+        "Вставте новий повний список характеристик або «-» щоб очистити.\n"
+        "<i>/cancel для скасування</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+@router.message(StateFilter(CmsEditProduct.spec_add_name))
+async def cms_prod_spec_add_name_input(message: Message, state: FSMContext) -> None:
+    name = " ".join((message.text or "").split()).strip()
+    if not name:
+        await message.answer("Назва характеристики не може бути порожньою. Введіть ще раз:")
+        return
+    await state.update_data(edit_spec_name=name)
+    await state.set_state(CmsEditProduct.spec_add_value)
+    await message.answer(f"📝 Назва: <b>{name}</b>\nВведіть значення характеристики:", parse_mode="HTML")
+
+
+@router.message(StateFilter(CmsEditProduct.spec_add_value))
+async def cms_prod_spec_add_value_input(message: Message, state: FSMContext) -> None:
+    value = " ".join((message.text or "").split()).strip()
+    if not value:
+        await message.answer("Значення характеристики не може бути порожнім. Введіть ще раз:")
+        return
+    data = await state.get_data()
+    prod_id: int = data["edit_prod_id"]
+    page: int = data.get("edit_prod_page", 0)
+    name: str = data["edit_spec_name"]
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+        if product is None:
+            await state.clear()
+            await message.answer("Товар не знайдено.")
+            return
+        pairs.append((name, value))
+        await _save_product_spec_pairs(session, product, pairs)
+    await state.clear()
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page)
+    await message.answer(
+        _product_specs_editor_text(product, pairs) + f"\n\n✅ Додано: <b>{name}</b>",
+        parse_mode="HTML",
+        reply_markup=_product_specs_editor_kb(prod_id, page, pairs),
+    )
+
+
+@router.message(StateFilter(CmsEditProduct.spec_edit_name))
+async def cms_prod_spec_edit_name_input(message: Message, state: FSMContext) -> None:
+    new_name = " ".join((message.text or "").split()).strip()
+    if not new_name:
+        await message.answer("Назва характеристики не може бути порожньою. Введіть ще раз:")
+        return
+    data = await state.get_data()
+    prod_id: int = data["edit_prod_id"]
+    page: int = data.get("edit_prod_page", 0)
+    idx: int = data["edit_spec_idx"]
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+        if product is None or idx < 0 or idx >= len(pairs):
+            await state.clear()
+            await message.answer("Характеристику не знайдено.")
+            return
+        _old_name, old_value = pairs[idx]
+        pairs[idx] = (new_name, old_value)
+        await _save_product_spec_pairs(session, product, pairs)
+    await state.clear()
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page, edit_spec_idx=idx)
+    await message.answer(
+        _product_spec_item_text(product, idx, len(pairs), pairs[idx][0], pairs[idx][1]) + "\n\n✅ Назву оновлено",
+        parse_mode="HTML",
+        reply_markup=_product_spec_item_kb(prod_id, page, idx),
+    )
+
+
+@router.message(StateFilter(CmsEditProduct.spec_edit_value))
+async def cms_prod_spec_edit_value_input(message: Message, state: FSMContext) -> None:
+    new_value = " ".join((message.text or "").split()).strip()
+    if not new_value:
+        await message.answer("Значення характеристики не може бути порожнім. Введіть ще раз:")
+        return
+    data = await state.get_data()
+    prod_id: int = data["edit_prod_id"]
+    page: int = data.get("edit_prod_page", 0)
+    idx: int = data["edit_spec_idx"]
+    async with AsyncSessionLocal() as session:
+        product, pairs = await _load_product_spec_pairs(session, prod_id)
+        if product is None or idx < 0 or idx >= len(pairs):
+            await state.clear()
+            await message.answer("Характеристику не знайдено.")
+            return
+        old_name, _old_value = pairs[idx]
+        pairs[idx] = (old_name, new_value)
+        await _save_product_spec_pairs(session, product, pairs)
+    await state.clear()
+    await state.update_data(edit_prod_id=prod_id, edit_prod_page=page, edit_spec_idx=idx)
+    await message.answer(
+        _product_spec_item_text(product, idx, len(pairs), pairs[idx][0], pairs[idx][1]) + "\n\n✅ Значення оновлено",
+        parse_mode="HTML",
+        reply_markup=_product_spec_item_kb(prod_id, page, idx),
+    )
 
 
 @router.message(StateFilter(CmsEditProduct.edit_field))
@@ -3266,4 +3646,3 @@ async def cms_nav_cat_emoji_input(message: Message, state: FSMContext) -> None:
         await session.commit()
     await message.answer(f"✅ Emoji оновлено: {emoji_text} {name}")
     await _nav_show_cats(message, state)
-
