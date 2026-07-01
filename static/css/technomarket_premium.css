@@ -1661,12 +1661,12 @@ body {
 .card-custom-badge.badge-новинка { background:rgba(34,197,94,.9); color:#fff; }
 .card-custom-badge.badge-хіт,.card-custom-badge.badge-хит { background:rgba(249,115,22,.9); color:#fff; }
 .card-custom-badge { background:rgba(139,92,246,.9); color:#fff; }
-.card-brand { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#9ca3af; margin-bottom:4px; }
+.card-brand { font-size:16px; font-weight:900; text-transform:uppercase; letter-spacing:.04em; color:#111827; margin-bottom:4px; line-height:1.15; }
 .category { color:#6b7280; font-size:13px; margin-bottom:6px; }
 .card h2 {
-    margin:0 0 10px; font-size:15px; line-height:1.3;
+    margin:0 0 10px; font-size:13px; line-height:1.3; font-weight:700; color:#6b7280;
     display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
-    min-height:60px;
+    min-height:52px;
 }
 .status { display:inline-block; padding:4px 9px; border-radius:999px; font-size:12px; margin-bottom:8px; }
 .stock-badge { display:inline-block; padding:3px 9px; border-radius:999px; font-size:.82em; font-weight:600; }
@@ -1722,7 +1722,7 @@ body {
     }
     .no-photo { border-radius: 12px; }
     .card-brand {
-        font-size: 12px;
+        font-size: 15px;
         text-align: center;
         margin-bottom: 2px;
     }
@@ -1732,9 +1732,9 @@ body {
         margin-bottom: 4px;
     }
     .card h2 {
-        font-size: 16px;
+        font-size: 13px;
         line-height: 1.2;
-        min-height: 38px;
+        min-height: 32px;
         -webkit-line-clamp: 2;
         text-align: center;
         margin: 0 0 6px;
@@ -1772,14 +1772,15 @@ body {
     }
     /* Override dark_parallax theme specificity for price/title sizing */
     [data-theme="dark_parallax"] .price { font-size: 22px; }
-    [data-theme="dark_parallax"] .card h2 { font-size: 16px; min-height: 38px; }
+    [data-theme="dark_parallax"] .card h2 { font-size: 13px; min-height: 32px; color:#6b7280; }
 }
 /* Extra-narrow (≤ 380 px) — tighten without going 1-col */
 @media (max-width:380px) {
     .products, .products-grid { gap: 8px; padding: 6px 8px 20px; }
     .card { padding: 10px; border-radius: 16px; }
     .card-image-wrap { height: 120px; margin-bottom: 7px; }
-    .card h2 { font-size: 13px; min-height: 30px; }
+    .card-brand { font-size: 13px; }
+    .card h2 { font-size: 12px; min-height: 28px; }
     .price { font-size: 18px; }
     .details-btn, .cart-btn { height: 38px; font-size: 13px; }
 }
